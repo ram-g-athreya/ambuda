@@ -27,8 +27,12 @@ class Text(Base):
     title = Column(String, nullable=False)
     #: Metadata for this text, as a <teiHeader> element.
     header = Column(_Text)
+    genre_id = foreign_key("genres.id", nullable=True)
+
     #: An ordered list of the sections contained within this text.
     sections = relationship("TextSection", backref="text", cascade="delete")
+    #: The genre this text belogns to.
+    genre = relationship("Genre", backref="texts")
 
     def __str__(self):
         return self.slug

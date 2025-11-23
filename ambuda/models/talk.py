@@ -47,7 +47,9 @@ class Thread(Base):
     #: The author of this thread.
     author_id = foreign_key("users.id")
     #: Timestamp at which this thread was created.
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False)
+    created_at = Column(
+        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
+    )
     #: Timestamp at which this thread was updated.
     updated_at = Column(DateTime, default=same_as("created_at"), nullable=False)
 
@@ -72,7 +74,9 @@ class Post(Base):
     #: The author of this post.
     author_id = foreign_key("users.id")
     #: Timestamp at which this post was created.
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False)
+    created_at = Column(
+        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
+    )
     #: Timestamp at which this post was updated (e.g. during an edit).
     updated_at = Column(DateTime, default=same_as("created_at"), nullable=False)
 

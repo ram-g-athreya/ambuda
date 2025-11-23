@@ -27,8 +27,8 @@ def _create_uuid():
 class Genre(Base):
     """A text genre.
 
-    We use genre to help proofers sort through different projects and select
-    one to work on.
+    We use genre to help people sort through different projects/texts and select the ones they
+    care about.
     """
 
     __tablename__ = "genres"
@@ -80,7 +80,9 @@ class Project(Base):
     page_numbers = text()
 
     #: Timestamp at which this project was created.
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False)
+    created_at = Column(
+        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
+    )
     #: Timestamp at which this project was last updated.
     updated_at = Column(DateTime, default=same_as("created_at"), nullable=False)
 
@@ -183,7 +185,9 @@ class Revision(Base):
     )
     #: Timestamp at which this revision was created.
     #: FIXME: rename to `created_at` for consistency with other models.
-    created = Column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False)
+    created = Column(
+        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
+    )
     #: An optional editor summary for this revision.
     summary = Column(Text_, nullable=False, default="")
     #: The actual content of this revision.

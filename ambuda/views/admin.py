@@ -240,6 +240,63 @@ def import_parse_data(model_name):
     )
 
 
+def add_genre_to_texts(model_name):
+    """Batch action to add a genre to multiple texts."""
+
+    class AddGenreForm(FlaskForm):
+        genre_id = SelectField("Genre", coerce=int, validators=[DataRequired()])
+
+    session = q.get_session()
+    genres = session.query(db.Genre).order_by(db.Genre.name).all()
+
+    form = AddGenreForm()
+    form.genre_id.choices = [(g.id, g.name) for g in genres]
+    selected_ids = request.form.getlist("selected_ids")
+
+    if not selected_ids:
+        flash("No texts selected", "error")
+        return redirect(url_for("admin.list_model", model_name=model_name))
+
+    if form.validate_on_submit():
+        genre_id = form.genre_id.data
+
+        try:
+            updated_count = 0
+            for text_id in selected_ids:
+                text = session.query(db.Text).get(int(text_id))
+                if text:
+                    text.genre_id = genre_id
+                    updated_count += 1
+
+            session.commit()
+            genre_name = session.query(db.Genre).get(genre_id).name
+            flash(
+                f"Successfully added genre '{genre_name}' to {updated_count} text(s)",
+                "success",
+            )
+            return redirect(url_for("admin.list_model", model_name=model_name))
+
+        except Exception as e:
+            session.rollback()
+            flash(f"Error adding genre: {str(e)}", "error")
+
+    texts = []
+    for text_id in selected_ids:
+        text = session.query(db.Text).get(int(text_id))
+        if text:
+            texts.append(text)
+
+    return render_template(
+        "admin/task-add-genre.html",
+        model_name=model_name,
+        form=form,
+        texts=texts,
+        selected_ids=selected_ids,
+        model_configs={c.model.__name__: c for c in MODEL_CONFIG},
+        models_by_category=get_models_by_category(),
+    )
+
+
 @dataclass
 class ModelConfig:
     #: The model name.
@@ -363,6 +420,11 @@ MODEL_CONFIG = [
                 slug="import-parse-data",
                 handler=import_parse_data,
             ),
+            Task(
+                name="Add genre",
+                slug="add-genre",
+                handler=add_genre_to_texts,
+            ),
         ],
         display_field="slug",
     ),
@@ -471,12 +533,12 @@ def list_model(model_name):
         if config.display_field
     }
     fk_by_model = {}
-    for col, model_name in fk_map.items():
-        if model_name in display_fields:
-            fk_by_model.setdefault(model_name, []).append(col)
-    for model_name, fk_columns in fk_by_model.items():
-        display_field = display_fields[model_name]
-        model_class = getattr(db, model_name)
+    for col, fk_model_name in fk_map.items():
+        if fk_model_name in display_fields:
+            fk_by_model.setdefault(fk_model_name, []).append(col)
+    for fk_model_name, fk_columns in fk_by_model.items():
+        display_field = display_fields[fk_model_name]
+        fk_model_class = getattr(db, fk_model_name)
         ids = set()
         for col in fk_columns:
             ids.update(
@@ -490,8 +552,8 @@ def list_model(model_name):
         if ids:
             # One query for foreign key IDs --> label
             results = (
-                session.query(model_class.id, getattr(model_class, display_field))
-                .filter(model_class.id.in_(ids))
+                session.query(fk_model_class.id, getattr(fk_model_class, display_field))
+                .filter(fk_model_class.id.in_(ids))
                 .all()
             )
 
