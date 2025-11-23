@@ -16,7 +16,6 @@ from sentry_sdk.integrations.flask import FlaskIntegration
 from sqlalchemy import exc
 
 import config
-from ambuda import admin as admin_manager
 from ambuda import auth as auth_manager
 from ambuda import checks, filters, queries
 from ambuda.consts import LOCALES
@@ -25,6 +24,7 @@ from ambuda.utils import assets
 from ambuda.utils.json_serde import AmbudaJSONEncoder
 from ambuda.utils.url_converters import ListConverter
 from ambuda.views.about import bp as about
+from ambuda.views.admin import bp as admin
 from ambuda.views.api import bp as api
 from ambuda.views.auth import bp as auth
 from ambuda.views.bharati import bp as bharati
@@ -124,14 +124,12 @@ def create_app(config_env: str):
 
     mailer.init_app(app)
 
-    with app.app_context():
-        _ = admin_manager.create_admin_manager(app)
-
     # Route extensions
     app.url_map.converters["list"] = ListConverter
 
     # Blueprints
     app.register_blueprint(about, url_prefix="/about")
+    app.register_blueprint(admin, url_prefix="/admin")
     app.register_blueprint(api, url_prefix="/api")
     app.register_blueprint(auth)
     app.register_blueprint(bharati, url_prefix="/bharati")

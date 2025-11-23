@@ -1,0 +1,96 @@
+{% extends "admin/base.html" %}
+
+{% block title %}{{ model_name }}{% endblock %}
+
+{% block content %}
+<div class="max-w-full">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-3xl font-bold text-slate-800">{{ model_name }}</h1>
+      <p class="text-slate-600 mt-1">{{ total }} total records</p>
+    </div>
+    <div class="flex gap-2">
+      {% for task in tasks %}
+      <a href="{{ url_for('admin.run_task', model_name=model_name, task_slug=task.slug) }}"
+         class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition">
+        {{ task.name }}
+      </a>
+      {% endfor %}
+      {% if not read_only %}
+      <a href="{{ url_for('admin.create_model', model_name=model_name) }}"
+         class="px-4 py-2 bg-sky-600 text-white rounded hover:bg-sky-700 transition">
+        + Create New
+      </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="bg-white rounded-lg border border-slate-200 overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full">
+        <thead class="bg-slate-50 border-b border-slate-200">
+          <tr>
+            {% for column in list_columns %}
+            <th class="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+              {{ column }}
+            </th>
+            {% endfor %}
+            <th class="px-4 py-3 text-right text-xs font-semibold text-slate-600 uppercase tracking-wider">
+              Actions
+            </th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-200">
+          {% for item in items %}
+          <tr class="hover:bg-slate-50 transition">
+            {% for column in list_columns %}
+            <td class="px-4 py-3 text-sm text-slate-700">
+              {% set value = item[column] %}
+              {% if value is none %}
+                <span class="text-slate-400">null</span>
+              {% elif column in fk_map %}
+                <a href="{{ url_for('admin.edit_model', model_name=fk_map[column], item_id=value) }}"
+                   class="text-sky-600 hover:text-sky-800 underline">
+                  {{ value }}
+                </a>
+              {% elif value is string and value|length > 100 %}
+                {{ value[:100] }}...
+              {% else %}
+                {{ value }}
+              {% endif %}
+            </td>
+            {% endfor %}
+            <td class="px-4 py-3 text-sm text-right">
+              <a href="{{ url_for('admin.edit_model', model_name=model_name, item_id=item.id) }}"
+                 class="text-sky-600 hover:text-sky-800">Edit</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if total_pages > 1 %}
+    <div class="px-4 py-3 border-t border-slate-200 flex items-center justify-between">
+      <div class="text-sm text-slate-600">
+        Page {{ page }} of {{ total_pages }}
+      </div>
+      <div class="flex gap-2">
+        {% if page > 1 %}
+        <a href="{{ url_for('admin.list_model', model_name=model_name, page=page-1) }}"
+           class="px-3 py-1 border border-slate-300 rounded hover:bg-slate-50 text-sm">
+          Previous
+        </a>
+        {% endif %}
+        {% if page < total_pages %}
+        <a href="{{ url_for('admin.list_model', model_name=model_name, page=page+1) }}"
+           class="px-3 py-1 border border-slate-300 rounded hover:bg-slate-50 text-sm">
+          Next
+        </a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

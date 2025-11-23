@@ -59,7 +59,6 @@ dependencies = [
     { name = "celery" },
     { name = "email-validator" },
     { name = "flask" },
-    { name = "flask-admin" },
     { name = "flask-babel" },
     { name = "flask-login" },
     { name = "flask-mail" },
@@ -82,7 +81,6 @@ dependencies = [
     { name = "regex" },
     { name = "requests" },
     { name = "sentry-sdk" },
-    { name = "setuptools" },
     { name = "sqlalchemy" },
     { name = "vidyut" },
     { name = "werkzeug" },
@@ -112,7 +110,6 @@ requires-dist = [
     { name = "celery", specifier = "==5.5.3" },
     { name = "email-validator", specifier = "==1.2.1" },
     { name = "flask", specifier = "==3.0.0" },
-    { name = "flask-admin", specifier = "==1.6.1" },
     { name = "flask-babel", specifier = "==4.0.0" },
     { name = "flask-login", specifier = "==0.6.3" },
     { name = "flask-mail", specifier = "==0.9.1" },
@@ -135,7 +132,6 @@ requires-dist = [
     { name = "regex", specifier = "==2022.6.2" },
     { name = "requests", specifier = ">=2.27.1" },
     { name = "sentry-sdk", specifier = "==2.42.0" },
-    { name = "setuptools", specifier = "<81" },
     { name = "sqlalchemy", specifier = "==2.0.44" },
     { name = "vidyut", specifier = ">=0.4.0" },
     { name = "werkzeug", specifier = "==3.0.1" },
@@ -706,19 +702,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/d8/09/c1a7354d3925a3c6c8cfdebf4245bae67d633ffda1ba415add06ffc839c5/flask-3.0.0.tar.gz", hash = "sha256:cfadcdb638b609361d29ec22360d6070a77d7463dcb3ab08d2c2f2f168845f58", size = 674171, upload-time = "2023-09-30T14:36:12.918Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/36/42/015c23096649b908c809c69388a805a571a3bea44362fe87e33fc3afa01f/flask-3.0.0-py3-none-any.whl", hash = "sha256:21128f47e4e3b9d597a3e8521a329bf56909b690fcc3fa3e477725aa81367638", size = 99724, upload-time = "2023-09-30T14:36:10.961Z" },
-]
-
-[[package]]
-name = "flask-admin"
-version = "1.6.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "flask" },
-    { name = "wtforms" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/be/4d/7cad383a93e3e1dd9378f1fcf05ddc532c6d921fb30c19ce8f8583630f24/Flask-Admin-1.6.1.tar.gz", hash = "sha256:24cae2af832b6a611a01d7dc35f42d266c1d6c75a426b869d8cb241b78233369", size = 6651224, upload-time = "2023-02-20T12:55:41.277Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/61/b3/656c78dfef163517dbbc9fd106f0604e37b436ad51f9d9450b60e9407e35/Flask_Admin-1.6.1-py3-none-any.whl", hash = "sha256:fd8190f1ec3355913a22739c46ed3623f1d82b8112cde324c60a6fc9b21c9406", size = 7498141, upload-time = "2023-02-20T12:55:32.767Z" },
 ]
 
 [[package]]

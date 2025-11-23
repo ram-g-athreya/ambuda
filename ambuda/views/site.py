@@ -12,7 +12,10 @@ bp = Blueprint("site", __name__)
 @bp.route("/")
 def index():
     texts = q.texts()
-    sorted_texts = sorted(texts, key=lambda x: transliterate(x.title, Scheme.HarvardKyoto, Scheme.Devanagari))
+    sorted_texts = sorted(
+        texts,
+        key=lambda x: transliterate(x.title, Scheme.HarvardKyoto, Scheme.Devanagari),
+    )
     return render_template("index.html", texts=sorted_texts)
 
 

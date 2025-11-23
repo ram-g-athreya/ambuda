@@ -3,8 +3,8 @@
 from datetime import datetime
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
-from sqlalchemy import Text as Text_
-from sqlalchemy.orm import relationship
+from sqlalchemy import Text as Text_, event
+from sqlalchemy.orm import relationship, validates
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from ambuda.models.base import Base, foreign_key, pk
@@ -68,6 +68,15 @@ class User(AmbudaUserMixin, Base):
     def check_password(self, raw_password: str) -> bool:
         """Check if the given password matches the user's hash."""
         return check_password_hash(self.password_hash, raw_password)
+
+
+@event.listens_for(User, "before_insert")
+@event.listens_for(User, "before_update")
+def validate_user(mapper, connection, user):
+    if not user.username:
+        raise ValueError("User must have a valid username")
+    if not user.email or "@" not in user.email:
+        raise ValueError("User must have a valid email")
 
 
 class Role(Base):
