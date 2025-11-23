@@ -1,9 +1,13 @@
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Any, Callable
+import tempfile
 
 from flask import Blueprint, render_template, abort, request, redirect, url_for, flash
 from flask_login import current_user
+from flask_wtf import FlaskForm
+from flask_wtf.file import FileField, FileRequired
 from sqlalchemy import inspect, Text
 from sqlalchemy.exc import SQLAlchemyError
 from wtforms import (
@@ -15,10 +19,13 @@ from wtforms import (
     DateTimeField,
     SelectField,
 )
-from wtforms.validators import Optional
+from wtforms.validators import Optional, DataRequired
 
 import ambuda.database as db
 import ambuda.queries as q
+from ambuda.utils.tei_parser import parse_document
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 bp = Blueprint("admin", __name__)
 
@@ -119,8 +126,90 @@ def create_model_form(model_class, obj=None):
         else:
             fields[col_name] = StringField(col_name, **field_kwargs)
 
-    ModelForm = type(f"{model_class.__name__}Form", (Form,), fields)
+    ModelForm = type(f"{model_class.__name__}Form", (FlaskForm,), fields)
     return ModelForm(obj=obj) if obj else ModelForm()
+
+
+def upload_xml_text(model_name):
+    def _create_text_from_document(session, slug: str, title: str, document):
+        text = db.Text(slug=slug, title=title, header=document.header)
+        session.add(text)
+        session.flush()
+
+        n = 1
+        for section in document.sections:
+            db_section = db.TextSection(
+                text_id=text.id, slug=section.slug, title=section.slug
+            )
+            session.add(db_section)
+            session.flush()
+
+            for block in section.blocks:
+                db_block = db.TextBlock(
+                    text_id=text.id,
+                    section_id=db_section.id,
+                    slug=block.slug,
+                    xml=block.blob,
+                    n=n,
+                )
+                session.add(db_block)
+                n += 1
+
+        session.commit()
+        return text
+
+    class UploadTextForm(FlaskForm):
+        title = StringField("Title", validators=[DataRequired()])
+        slug = StringField("Slug", validators=[DataRequired()])
+        xml_file = FileField("XML File", validators=[FileRequired()])
+
+    form = UploadTextForm()
+
+    if form.validate_on_submit():
+        slug = form.slug.data
+        title = form.title.data
+        xml_file = form.xml_file.data
+
+        session = q.get_session()
+        stmt = select(db.Text).filter_by(slug=slug)
+        if session.scalars(stmt).first():
+            flash(f"A text with slug '{slug}' already exists", "error")
+            return render_template(
+                "admin/upload-xml.html",
+                model_name=model_name,
+                form=form,
+                model_configs={c.model.__name__: c for c in MODEL_CONFIG},
+                models_by_category=get_models_by_category(),
+            )
+
+        tmp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="wb", suffix=".xml", delete=False
+            ) as tmp_file:
+                xml_file.save(tmp_file)
+                tmp_path = Path(tmp_file.name)
+
+            document = parse_document(tmp_path)
+            _create_text_from_document(session, slug, title, document)
+
+            flash(f"Successfully uploaded text '{title}' with slug '{slug}'", "success")
+            return redirect(url_for("admin.list_model", model_name=model_name))
+
+        except Exception as e:
+            session.rollback()
+            flash(f"Error uploading XML: {str(e)}", "error")
+        finally:
+            if tmp_path and tmp_path.exists():
+                tmp_path.unlink()
+
+    return render_template(
+        "admin/upload-xml.html",
+        model_name=model_name,
+        form=form,
+        model_configs={c.model.__name__: c for c in MODEL_CONFIG},
+        models_by_category=get_models_by_category(),
+    )
 
 
 @dataclass
@@ -129,8 +218,6 @@ class ModelConfig:
     model: Any
     #: Columns that appear in list view.
     list_columns: list[str]
-    #: Meaningfully sortable columns. (Unused)
-    searchable_columns: list[str]
     #: Model category (for sidebar grouping)
     category: Category
     #: Tasks associated with the model (upload, etc.)
@@ -139,144 +226,135 @@ class ModelConfig:
     read_only: bool = False
     #: Permission required: 'admin' or 'moderator'. Defaults to 'admin'.
     permission: str = "admin"
+    #: Field to display for foreign keys (e.g., 'slug', 'username'). If None, shows ID.
+    display_field: str | None = None
 
 
 MODEL_CONFIG = [
     ModelConfig(
         model=db.BlockParse,
-        list_columns=["id", "block_id"],
-        searchable_columns=[],
+        list_columns=["id", "text_id", "block_id"],
         category=Category.TEXTS,
         read_only=True,
     ),
     ModelConfig(
         model=db.BlogPost,
         list_columns=["id", "slug", "title", "author_id", "created_at"],
-        searchable_columns=["slug", "title"],
         category=Category.BLOG,
-        read_only=True,
     ),
     ModelConfig(
         model=db.Board,
         list_columns=["id", "slug", "title"],
-        searchable_columns=["slug", "title"],
         category=Category.DISCUSSION,
         read_only=True,
     ),
     ModelConfig(
         model=db.ContributorInfo,
-        list_columns=["id", "sa_title", "title"],
-        searchable_columns=["sa_title", "title"],
+        list_columns=["id", "name", "title"],
         category=Category.SITE,
         permission="moderator",
     ),
     ModelConfig(
         model=db.Dictionary,
         list_columns=["id", "slug", "title"],
-        searchable_columns=["slug", "title"],
         category=Category.DICTIONARIES,
         tasks=[],
+        display_field="slug",
     ),
     ModelConfig(
         model=db.DictionaryEntry,
         list_columns=["id", "dictionary_id", "key"],
-        searchable_columns=["key"],
         category=Category.DICTIONARIES,
         read_only=True,
     ),
     ModelConfig(
         model=db.Genre,
         list_columns=["id", "name"],
-        searchable_columns=["name"],
         category=Category.PROOFING,
         permission="moderator",
     ),
     ModelConfig(
         model=db.Page,
         list_columns=["id", "project_id", "slug", "order"],
-        searchable_columns=["slug"],
         category=Category.PROOFING,
         read_only=True,
     ),
     ModelConfig(
         model=db.PageStatus,
         list_columns=["id", "name"],
-        searchable_columns=["name"],
         category=Category.PROOFING,
         read_only=True,
     ),
     ModelConfig(
         model=db.PasswordResetToken,
-        list_columns=["id", "user_id", "created_at"],
-        searchable_columns=[],
+        list_columns=["id", "user_id"],
         category=Category.AUTH,
         read_only=True,
     ),
     ModelConfig(
         model=db.Post,
         list_columns=["id", "thread_id", "author_id", "created_at"],
-        searchable_columns=[],
         category=Category.DISCUSSION,
         read_only=True,
     ),
     ModelConfig(
         model=db.Project,
         list_columns=["id", "slug", "display_title", "status", "creator_id"],
-        searchable_columns=["slug", "display_title"],
         category=Category.PROOFING,
     ),
     ModelConfig(
         model=db.ProjectSponsorship,
         list_columns=["id", "sa_title", "en_title", "cost_inr"],
-        searchable_columns=["sa_title", "en_title"],
         category=Category.SITE,
         permission="moderator",
     ),
     ModelConfig(
         model=db.Revision,
-        list_columns=["id", "page_id", "author_id", "created_at"],
-        searchable_columns=[],
+        list_columns=["id", "page_id", "author_id", "created"],
         category=Category.PROOFING,
         read_only=True,
     ),
     ModelConfig(
         model=db.Role,
-        list_columns=["id", "name", "description"],
-        searchable_columns=["name"],
+        list_columns=["id", "name"],
         category=Category.AUTH,
         read_only=True,
     ),
     ModelConfig(
         model=db.Text,
         list_columns=["id", "slug", "title"],
-        searchable_columns=["slug", "title"],
         category=Category.TEXTS,
+        tasks=[
+            Task(
+                name="Upload XML",
+                slug="upload-xml",
+                handler=upload_xml_text,
+            )
+        ],
+        display_field="slug",
     ),
     ModelConfig(
         model=db.TextBlock,
-        list_columns=["id", "text_id", "slug", "number"],
-        searchable_columns=["slug"],
+        list_columns=["id", "text_id", "slug", "n"],
         category=Category.TEXTS,
     ),
     ModelConfig(
         model=db.TextSection,
         list_columns=["id", "text_id", "slug", "title"],
-        searchable_columns=["slug", "title"],
         category=Category.TEXTS,
         read_only=True,
     ),
     ModelConfig(
         model=db.Thread,
         list_columns=["id", "board_id", "title", "created_at"],
-        searchable_columns=["title"],
         category=Category.DISCUSSION,
         read_only=True,
     ),
     ModelConfig(
         model=db.User,
         list_columns=["id", "username", "email", "created_at"],
-        searchable_columns=["username", "email"],
         category=Category.AUTH,
+        display_field="username",
     ),
 ]
 
@@ -352,6 +430,42 @@ def list_model(model_name):
     total_pages = (total + per_page - 1) // per_page
     fk_map = get_foreign_key_info(model_class)
 
+    # Build foreign key labels efficiently (single query per model type)
+    fk_labels = {}
+    display_fields = {
+        config.model.__name__: config.display_field
+        for config in MODEL_CONFIG
+        if config.display_field
+    }
+    fk_by_model = {}
+    for col, model_name in fk_map.items():
+        if model_name in display_fields:
+            fk_by_model.setdefault(model_name, []).append(col)
+    for model_name, fk_columns in fk_by_model.items():
+        display_field = display_fields[model_name]
+        model_class = getattr(db, model_name)
+        ids = set()
+        for col in fk_columns:
+            ids.update(
+                [
+                    getattr(item, col)
+                    for item in items
+                    if hasattr(item, col) and getattr(item, col) is not None
+                ]
+            )
+
+        if ids:
+            # One query for foreign key IDs --> label
+            results = (
+                session.query(model_class.id, getattr(model_class, display_field))
+                .filter(model_class.id.in_(ids))
+                .all()
+            )
+
+            label_map = {id_: label for id_, label in results}
+            for col in fk_columns:
+                fk_labels[col] = label_map
+
     return render_template(
         "admin/list.html",
         model_name=model_name,
@@ -364,6 +478,7 @@ def list_model(model_name):
         total=total,
         total_pages=total_pages,
         fk_map=fk_map,
+        fk_labels=fk_labels,
         tasks=tasks,
         read_only=config.read_only,
         model_configs={c.model.__name__: c for c in MODEL_CONFIG},
@@ -378,29 +493,24 @@ def create_model(model_name):
         abort(404)
 
     model_class = config.model
+    form = create_model_form(model_class)
 
-    if request.method == "POST":
-        form = create_model_form(model_class)
-        form.process(request.form)
+    if form.validate_on_submit():
+        session = q.get_session()
+        item = model_class()
+        for field in form:
+            if hasattr(item, field.name):
+                setattr(item, field.name, field.data)
 
-        if form.validate():
-            session = q.get_session()
-            item = model_class()
-            for field in form:
-                if hasattr(item, field.name):
-                    setattr(item, field.name, field.data)
-
-            session.add(item)
-            try:
-                session.commit()
-                flash(f"{model_name} created successfully", "success")
-                return redirect(url_for("admin.list_model", model_name=model_name))
-            except (SQLAlchemyError, ValueError) as e:
-                session.rollback()
-                flash(f"Error creating {model_name}: {str(e)}", "error")
-                # Continue to re-render the form with the error
-    else:
-        form = create_model_form(model_class)
+        session.add(item)
+        try:
+            session.commit()
+            flash(f"{model_name} created successfully", "success")
+            return redirect(url_for("admin.list_model", model_name=model_name))
+        except (SQLAlchemyError, ValueError) as e:
+            session.rollback()
+            flash(f"Error creating {model_name}: {str(e)}", "error")
+            # Continue to re-render the form with the error
 
     return render_template(
         "admin/create.html",
@@ -426,29 +536,25 @@ def edit_model(model_name, item_id):
     if not item:
         abort(404)
 
-    if request.method == "POST":
+    form = create_model_form(model_class, obj=item)
+
+    if form.validate_on_submit():
         # Don't allow POST for read-only models
         if config.read_only:
             abort(404)
 
-        form = create_model_form(model_class)
-        form.process(request.form)
+        for field in form:
+            if hasattr(item, field.name):
+                setattr(item, field.name, field.data)
 
-        if form.validate():
-            for field in form:
-                if hasattr(item, field.name):
-                    setattr(item, field.name, field.data)
-
-            try:
-                session.commit()
-                flash(f"{model_name} updated successfully", "success")
-                return redirect(url_for("admin.list_model", model_name=model_name))
-            except SQLAlchemyError as e:
-                session.rollback()
-                flash(f"Error updating {model_name}: {str(e)}", "error")
-                # Continue to re-render the form with the error
-    else:
-        form = create_model_form(model_class, obj=item)
+        try:
+            session.commit()
+            flash(f"{model_name} updated successfully", "success")
+            return redirect(url_for("admin.list_model", model_name=model_name))
+        except SQLAlchemyError as e:
+            session.rollback()
+            flash(f"Error updating {model_name}: {str(e)}", "error")
+            # Continue to re-render the form with the error
 
     return render_template(
         "admin/edit.html",
@@ -462,6 +568,30 @@ def edit_model(model_name, item_id):
         model_configs={c.model.__name__: c for c in MODEL_CONFIG},
         models_by_category=get_models_by_category(),
     )
+
+
+@bp.route("/<model_name>/<int:item_id>/delete", methods=["POST"])
+def delete_model(model_name, item_id):
+    config = get_model_config(model_name)
+    if not config:
+        abort(404)
+
+    model_class = config.model
+
+    session = q.get_session()
+    item = session.query(model_class).get(item_id)
+    if not item:
+        abort(404)
+
+    try:
+        session.delete(item)
+        session.commit()
+        flash(f"{model_name} deleted successfully", "success")
+    except SQLAlchemyError as e:
+        session.rollback()
+        flash(f"Error deleting {model_name}: {str(e)}", "error")
+
+    return redirect(url_for("admin.list_model", model_name=model_name))
 
 
 @bp.route("/<model_name>/task/<task_slug>", methods=["GET", "POST"])

@@ -10,12 +10,19 @@
       <p class="text-slate-600 mt-1">{{ total }} total records</p>
     </div>
     <div class="flex gap-2">
-      {% for task in tasks %}
-      <a href="{{ url_for('admin.run_task', model_name=model_name, task_slug=task.slug) }}"
-         class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition">
-        {{ task.name }}
-      </a>
-      {% endfor %}
+      {% if tasks %}
+      <form method="GET" class="flex gap-2" onsubmit="event.preventDefault(); window.location.href = document.getElementById('task-select').value;">
+        <select id="task-select" class="px-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500">
+          <option value="">Select an action...</option>
+          {% for task in tasks %}
+          <option value="{{ url_for('admin.run_task', model_name=model_name, task_slug=task.slug) }}">{{ task.name }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition">
+          Go
+        </button>
+      </form>
+      {% endif %}
       {% if not read_only %}
       <a href="{{ url_for('admin.create_model', model_name=model_name) }}"
          class="px-4 py-2 bg-sky-600 text-white rounded hover:bg-sky-700 transition">
@@ -24,6 +31,16 @@
       {% endif %}
     </div>
   </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="mb-4 p-3 rounded text-sm {% if category == 'success' %}bg-green-100 text-green-800{% else %}bg-red-100 text-red-800{% endif %}">
+          {{ message }}
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
 
   <div class="bg-white rounded-lg border border-slate-200 overflow-hidden">
     <div class="overflow-x-auto">
@@ -49,9 +66,10 @@
               {% if value is none %}
                 <span class="text-slate-400">null</span>
               {% elif column in fk_map %}
+                {% set label = fk_labels.get(column, {}).get(value, value) %}
                 <a href="{{ url_for('admin.edit_model', model_name=fk_map[column], item_id=value) }}"
                    class="text-sky-600 hover:text-sky-800 underline">
-                  {{ value }}
+                  {{ label }}
                 </a>
               {% elif value is string and value|length > 100 %}
                 {{ value[:100] }}...

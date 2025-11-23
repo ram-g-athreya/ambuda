@@ -1,0 +1,74 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Upload XML Text{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl">
+  <div class="mb-6">
+    <h1 class="text-3xl font-bold text-slate-800">Upload XML Text</h1>
+    <p class="text-slate-600 mt-2">Upload a TEI XML document to create a new text with sections and blocks.</p>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="mb-4 p-3 rounded text-sm {% if category == 'success' %}bg-green-100 text-green-800{% else %}bg-red-100 text-red-800{% endif %}">
+          {{ message }}
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <form method="POST" enctype="multipart/form-data" class="bg-white rounded-lg border border-slate-200 p-6">
+    {{ form.csrf_token }}
+    <div class="mb-4">
+      <label for="{{ form.slug.id }}" class="block text-sm font-semibold text-slate-700 mb-1">
+        {{ form.slug.label.text }}
+      </label>
+      {{ form.slug(class="w-full px-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-sky-500", placeholder="e.g., bhagavad-gita") }}
+      <p class="mt-1 text-xs text-slate-500">A unique identifier for this text (used in URLs)</p>
+      {% if form.slug.errors %}
+        {% for error in form.slug.errors %}
+          <p class="mt-1 text-sm text-red-600">{{ error }}</p>
+        {% endfor %}
+      {% endif %}
+    </div>
+
+    <div class="mb-4">
+      <label for="{{ form.title.id }}" class="block text-sm font-semibold text-slate-700 mb-1">
+        {{ form.title.label.text }}
+      </label>
+      {{ form.title(class="w-full px-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-sky-500", placeholder="e.g., Bhagavad Gītā") }}
+      <p class="mt-1 text-xs text-slate-500">The display title for this text</p>
+      {% if form.title.errors %}
+        {% for error in form.title.errors %}
+          <p class="mt-1 text-sm text-red-600">{{ error }}</p>
+        {% endfor %}
+      {% endif %}
+    </div>
+
+    <div class="mb-4">
+      <label for="{{ form.xml_file.id }}" class="block text-sm font-semibold text-slate-700 mb-1">
+        {{ form.xml_file.label.text }}
+      </label>
+      {{ form.xml_file(class="w-full px-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-sky-500") }}
+      <p class="mt-1 text-xs text-slate-500">A TEI XML document containing the text content</p>
+      {% if form.xml_file.errors %}
+        {% for error in form.xml_file.errors %}
+          <p class="mt-1 text-sm text-red-600">{{ error }}</p>
+        {% endfor %}
+      {% endif %}
+    </div>
+
+    <div class="flex gap-3 pt-4 border-t border-slate-200">
+      <button type="submit" class="px-4 py-2 bg-sky-600 text-white rounded hover:bg-sky-700 transition">
+        Upload
+      </button>
+      <a href="{{ url_for('admin.list_model', model_name=model_name) }}"
+         class="px-4 py-2 bg-slate-200 text-slate-700 rounded hover:bg-slate-300 transition">
+        Cancel
+      </a>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -11,7 +11,7 @@
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
       {% for category, message in messages %}
-        <div class="mb-4 p-4 rounded {% if category == 'success' %}bg-green-100 text-green-800{% else %}bg-red-100 text-red-800{% endif %}">
+        <div class="mb-4 p-3 rounded text-sm {% if category == 'success' %}bg-green-100 text-green-800{% else %}bg-red-100 text-red-800{% endif %}">
           {{ message }}
         </div>
       {% endfor %}
@@ -19,7 +19,8 @@
   {% endwith %}
 
   <form method="POST" class="bg-white rounded-lg border border-slate-200 p-6">
-    {% for field in form %}
+    {{ form.csrf_token }}
+    {% for field in form if field.name != 'csrf_token' %}
       <div class="mb-4">
         <label for="{{ field.id }}" class="block text-sm font-semibold text-slate-700 mb-1">
           {{ field.label.text }}
