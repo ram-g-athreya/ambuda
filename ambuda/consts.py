@@ -77,8 +77,9 @@ BOT_USERNAME = "ambuda-bot"
 #: list grows, we can consider more manageable ways to present this data to the
 #: user.
 LOCALES = [
-    Locale(code="sa", slug="sa", text="संस्कृतम्"),
+    # Put English first so Indian scripts are grouped.
     Locale(code="en", slug="en", text="English"),
+    Locale(code="sa", slug="sa", text="संस्कृतम्"),
     Locale(code="hi_IN", slug="hi", text="हिन्दी"),
     Locale(code="mr_IN", slug="mr", text="मराठी"),
     Locale(code="te_IN", slug="te", text="తెలుగు"),

@@ -4,13 +4,16 @@ from flask import Blueprint, redirect, render_template, session, url_for
 
 from ambuda import queries as q
 from ambuda.consts import LOCALES
+from vidyut.lipi import transliterate, Scheme
 
 bp = Blueprint("site", __name__)
 
 
 @bp.route("/")
 def index():
-    return render_template("index.html")
+    texts = q.texts()
+    sorted_texts = sorted(texts, key=lambda x: transliterate(x.title, Scheme.HarvardKyoto, Scheme.Devanagari))
+    return render_template("index.html", texts=sorted_texts)
 
 
 @bp.route("/contact")
