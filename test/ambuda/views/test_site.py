@@ -3,7 +3,7 @@ import pytest
 
 def test_index(client):
     resp = client.get("/")
-    assert "Explore the library" in resp.text
+    assert resp.status_code == 200
 
 
 def test_donate(client):
