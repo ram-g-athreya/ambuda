@@ -1,6 +1,6 @@
 """Models related to user authentication and authorization."""
 
-from datetime import datetime
+from datetime import datetime, UTC
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy import Text as Text_, event
@@ -25,7 +25,7 @@ class User(AmbudaUserMixin, Base):
     #: The user's email.
     email = Column(String, nullable=False, unique=True)
     #: Timestamp at which this user record was created.
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False)
 
     #: The user's self-description.
     description = Column(Text_, nullable=False, default="")
@@ -92,7 +92,7 @@ class Role(Base):
     #: Name of the role.
     name = Column(String, unique=True, nullable=False)
     #: When this role was defined.
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC).replace(tzinfo=None))
 
     def __repr__(self):
         return f"<Role({self.id}, {self.name!r})>"
@@ -126,7 +126,7 @@ class PasswordResetToken(Base):
     #: deactivate / delete this token.)
     is_active = Column(Boolean, default=True, nullable=False)
     #: Timestamp at which this token was created.
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False)
     #: Timestamp at which this token was used.
     used_at = Column(DateTime, nullable=True)
 

@@ -1,7 +1,7 @@
 """Views for basic site pages."""
 
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from pathlib import Path
 
 from flask import Blueprint, current_app, flash, render_template
@@ -293,7 +293,7 @@ def talk():
 @bp.route("/admin/dashboard/")
 @moderator_required
 def dashboard():
-    now = datetime.now()
+    now = datetime.now(UTC).replace(tzinfo=None)
     days_ago_30d = now - timedelta(days=30)
     days_ago_7d = now - timedelta(days=7)
     days_ago_1d = now - timedelta(days=1)

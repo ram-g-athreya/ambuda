@@ -9,7 +9,7 @@ import calendar
 import math
 from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, UTC
 
 #: ISO weekday correspanding to Sunday.
 ISO_SUNDAY = 7
@@ -54,7 +54,7 @@ def _create_calendar_dates(last_date: date | None = None) -> list[date]:
 
     :param `last_date`: the last date to include.
     """
-    last_date = last_date or datetime.now().date()
+    last_date = last_date or datetime.now(UTC).date()
 
     # Round start date to nearest Sunday.
     first_date = last_date - timedelta(days=365)

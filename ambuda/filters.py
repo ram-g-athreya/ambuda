@@ -1,6 +1,6 @@
 """Manages various small template filters."""
 
-from datetime import datetime
+from datetime import datetime, UTC
 
 from dateutil.relativedelta import relativedelta
 from vidyut.lipi import transliterate, Scheme
@@ -39,11 +39,11 @@ def time_ago(dt: datetime, now=None) -> str:
     """Print a datetime relative to right now.
 
     :param dt: the datetime to check
-    :param now: the "now" datetime. If not set, use `utcnow()`.
+    :param now: the "now" datetime. If not set, use current UTC time.
 
     """
     # FIXME: add i18n support
-    now = now or datetime.utcnow()
+    now = now or datetime.now(UTC).replace(tzinfo=None)
     rd = relativedelta(now, dt)
     for name in ["years", "months", "days", "hours", "minutes", "seconds"]:
         n = getattr(rd, name)

@@ -16,7 +16,7 @@ Max lengths:
 
 import secrets
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 
 from flask import Blueprint, flash, redirect, render_template, url_for
 from flask_babel import lazy_gettext as _l
@@ -70,7 +70,7 @@ def _get_reset_token_for_user(user_id: int) -> db.PasswordResetToken | None:
 
 
 def _is_valid_reset_token(row: db.PasswordResetToken, raw_token: str, now=None):
-    now = now or datetime.utcnow()
+    now = now or datetime.now(UTC).replace(tzinfo=None)
 
     # No token for user
     if not row:
@@ -301,7 +301,7 @@ def reset_password_from_token(username, raw_token):
         if has_password_match:
             user.set_password(form.password.data)
             token.is_active = False
-            token.used_at = datetime.now()
+            token.used_at = datetime.now(UTC).replace(tzinfo=None)
 
             session = q.get_session()
             session.add(user)
