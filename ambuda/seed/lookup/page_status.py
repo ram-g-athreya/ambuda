@@ -24,7 +24,7 @@ def run(engine=None):
         stmt = select(db.PageStatus)
         statuses = list(session.scalars(stmt).all())
         existing_names = {s.name for s in statuses}
-        new_names = {n.value for n in SitePageStatus if n not in existing_names}
+        new_names = sorted({n.value for n in SitePageStatus if n not in existing_names})
 
         if new_names:
             for name in new_names:

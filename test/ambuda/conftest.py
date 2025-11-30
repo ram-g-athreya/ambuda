@@ -147,6 +147,13 @@ def initialize_test_db():
     session.add(post)
     session.commit()
 
+    # Genres
+    # using harvard-kyoto because devanagari breaks my editor :(
+    genre_1 = db.Genre(name="kAvyam")
+    genre_2 = db.Genre(name="zAstram")
+    session.add_all([genre_1, genre_2])
+    session.flush()
+
     # Proofing
     board = db.Board(title="board")
     session.add(board)
@@ -159,7 +166,11 @@ def initialize_test_db():
     board.threads = [thread]
 
     project = db.Project(
-        slug="test-project", display_title="Test Project", board_id=board.id
+        slug="test-project",
+        display_title="Test Project",
+        board_id=board.id,
+        creator_id=admin.id,
+        genre_id=genre_1.id,
     )
     session.add(project)
     session.flush()

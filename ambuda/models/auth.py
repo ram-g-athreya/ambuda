@@ -98,6 +98,9 @@ class Role(Base):
         DateTime, nullable=False, default=lambda: datetime.now(UTC).replace(tzinfo=None)
     )
 
+    def __str__(self):
+        return self.name
+
     def __repr__(self):
         return f"<Role({self.id}, {self.name!r})>"
 

@@ -19,7 +19,7 @@ def run(engine=None):
         stmt = select(db.Role)
         roles = list(session.scalars(stmt).all())
         existing_names = {s.name for s in roles}
-        new_names = {r.value for r in SiteRole if r.value not in existing_names}
+        new_names = sorted({r.value for r in SiteRole if r.value not in existing_names})
 
         if new_names:
             for name in new_names:

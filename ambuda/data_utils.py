@@ -182,13 +182,9 @@ def import_dictionary_from_xml(slug: str, title: str, path: Path) -> int:
     return entry_count
 
 
-def import_text_metadata(session: Session, json_path: Path) -> tuple[int, list[str]]:
-    try:
-        with open(json_path, "r") as f:
-            metadata_list = json.load(f)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Invalid JSON file: {e}")
-
+def import_text_metadata(
+    session: Session, metadata_list: list
+) -> tuple[int, list[str]]:
     if not isinstance(metadata_list, list):
         raise ValueError("JSON file must contain a list of objects")
 
