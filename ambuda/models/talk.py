@@ -32,6 +32,9 @@ class Board(Base):
         "Post", order_by=lambda: Post.created_at.desc(), backref="board"
     )
 
+    def __str__(self) -> str:
+        return self.title
+
 
 class Thread(Base):
     """A list of posts."""
@@ -57,6 +60,9 @@ class Thread(Base):
     author = relationship("User", backref="threads")
     #: Posts, oldest first.
     posts = relationship("Post", order_by=lambda: Post.created_at, backref="thread")
+
+    def __str__(self) -> str:
+        return self.title
 
 
 class Post(Base):

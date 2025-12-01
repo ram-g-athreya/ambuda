@@ -39,7 +39,13 @@ def _assert_matches(actual, expected, path: list = None):
 
 
 def test_export_metadata__success(admin_client):
-    resp = admin_client.post("/admin/Text/task/export-metadata")
+    session = get_session()
+    stmt = select(db.Text).limit(1)
+    text = session.scalars(stmt).first()
+
+    resp = admin_client.post(
+        "/admin/Text/task/export-metadata", data={"selected_ids": [str(text.id)]}
+    )
     assert resp.status_code == 200
     assert resp.content_type == "application/json"
 
@@ -324,7 +330,10 @@ def test_import_projects_and_export_projects(admin_client):
     session.commit()
 
     # Export
-    resp = admin_client.post("/admin/Project/task/export-projects")
+    resp = admin_client.post(
+        "/admin/Project/task/export-projects",
+        data={"selected_ids": [str(export_project.id)]},
+    )
     exported_data = json.loads(resp.data)
 
     json_project = None

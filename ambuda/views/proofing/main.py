@@ -259,7 +259,15 @@ def recent_changes():
     session = q.get_session()
     stmt = (
         select(db.Revision)
-        .options(orm.defer(db.Revision.content))
+        .options(
+            orm.defer(db.Revision.content),
+            orm.selectinload(db.Revision.author).load_only(db.User.username),
+            orm.selectinload(db.Revision.page).load_only(db.Page.slug),
+            orm.selectinload(db.Revision.project).load_only(
+                db.Project.slug, db.Project.display_title
+            ),
+            orm.selectinload(db.Revision.status).load_only(db.PageStatus.name),
+        )
         .filter(db.Revision.author_id != bot_user.id)
         .order_by(db.Revision.created.desc())
         .limit(num_per_page)
@@ -267,7 +275,12 @@ def recent_changes():
     recent_revisions = list(session.scalars(stmt).all())
     recent_activity = [("revision", r.created, r) for r in recent_revisions]
 
-    stmt = select(db.Project).order_by(db.Project.created_at.desc()).limit(num_per_page)
+    stmt = (
+        select(db.Project)
+        .options(orm.selectinload(db.Project.creator).load_only(db.User.username))
+        .order_by(db.Project.created_at.desc())
+        .limit(num_per_page)
+    )
     recent_projects = list(session.scalars(stmt).all())
     recent_activity += [("project", p.created_at, p) for p in recent_projects]
 

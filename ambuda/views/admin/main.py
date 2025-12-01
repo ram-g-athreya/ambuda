@@ -671,4 +671,5 @@ def run_task(model_name, task_slug):
     if not task:
         abort(404)
 
-    return task.handler(model_name=model_name)
+    selected_ids = request.form.getlist("selected_ids")
+    return task.handler(model_name=model_name, selected_ids=selected_ids)

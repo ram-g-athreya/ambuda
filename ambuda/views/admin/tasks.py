@@ -36,7 +36,7 @@ def get_model_configs_context():
     }
 
 
-def import_text(model_name):
+def import_text(model_name, selected_ids: list | None = None):
     """Import texts from XML files."""
 
     class UploadTextForm(FlaskForm):
@@ -117,7 +117,7 @@ def import_text(model_name):
     )
 
 
-def import_parse_data(model_name):
+def import_parse_data(model_name, selected_ids: list | None = None):
     """Import parse data for texts from TXT files."""
 
     class UploadParseDataForm(FlaskForm):
@@ -191,7 +191,7 @@ def import_parse_data(model_name):
     )
 
 
-def add_genre_to_texts(model_name):
+def add_genre_to_texts(model_name, selected_ids: list | None = None):
     """Batch action to add a genre to multiple texts."""
 
     class AddGenreForm(FlaskForm):
@@ -202,7 +202,6 @@ def add_genre_to_texts(model_name):
 
     form = AddGenreForm()
     form.genre_id.choices = [(g.id, g.name) for g in genres]
-    selected_ids = request.form.getlist("selected_ids")
 
     if not selected_ids:
         flash("No texts selected", "error")
@@ -247,7 +246,7 @@ def add_genre_to_texts(model_name):
     )
 
 
-def import_metadata(model_name):
+def import_metadata(model_name, selected_ids: list | None = None):
     """Import text metadata from a JSON file."""
 
     class UploadMetadataForm(FlaskForm):
@@ -292,11 +291,19 @@ def import_metadata(model_name):
     )
 
 
-def export_metadata(model_name):
+def export_metadata(model_name, selected_ids: list | None = None):
     """Export Text metadata as JSON."""
     session = q.get_session()
 
-    texts = session.query(db.Text).all()
+    query = session.query(db.Text)
+
+    if not selected_ids:
+        selected_ids = []
+
+    text_ids = [int(id_str) for id_str in selected_ids]
+    query = query.filter(db.Text.id.in_(text_ids))
+
+    texts = query.all()
     export_data = []
     for text in texts:
         text_dict = {
@@ -315,7 +322,7 @@ def export_metadata(model_name):
     return response
 
 
-def import_dictionaries(model_name):
+def import_dictionaries(model_name, selected_ids: list | None = None):
     """Import dictionaries from XML files."""
 
     class UploadDictionaryForm(FlaskForm):
@@ -443,15 +450,19 @@ def deserialize(data: dict, model_class):
     return obj
 
 
-def export_projects(model_name):
+def export_projects(model_name, selected_ids: list | None = None):
     session = q.get_session()
-    projects = (
-        session.query(db.Project)
-        .options(
-            selectinload(db.Project.pages).selectinload(db.Page.revisions)
-        )
-        .all()
+    query = session.query(db.Project).options(
+        selectinload(db.Project.pages).selectinload(db.Page.revisions)
     )
+
+    if not selected_ids:
+        selected_ids = []
+
+    project_ids = [int(id_str) for id_str in selected_ids]
+    query = query.filter(db.Project.id.in_(project_ids))
+
+    projects = query.all()
 
     export_data = {"projects": []}
     for project in projects:
@@ -482,7 +493,7 @@ def export_projects(model_name):
     return response
 
 
-def import_projects(model_name):
+def import_projects(model_name, selected_ids: list | None = None):
     class UploadProjectsForm(FlaskForm):
         json_file = FileField("JSON File", validators=[FileRequired()])
 
