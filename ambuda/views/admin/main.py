@@ -206,14 +206,14 @@ MODEL_CONFIG = [
                 handler=tasks.import_parse_data,
             ),
             Task(
-                name="Export metadata",
-                slug="export-metadata",
-                handler=tasks.export_metadata,
-            ),
-            Task(
                 name="Import metadata",
                 slug="import-metadata",
                 handler=tasks.import_metadata,
+            ),
+            Task(
+                name="Export metadata",
+                slug="export-metadata",
+                handler=tasks.export_metadata,
             ),
             Task(
                 name="Add genre",

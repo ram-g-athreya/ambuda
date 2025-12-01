@@ -15,6 +15,7 @@ from flask import (
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileField, FileRequired, MultipleFileField
 from sqlalchemy import inspect, select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.types import DateTime
 from wtforms import SelectField
 from wtforms.validators import DataRequired
@@ -444,7 +445,13 @@ def deserialize(data: dict, model_class):
 
 def export_projects(model_name):
     session = q.get_session()
-    projects = session.query(db.Project).all()
+    projects = (
+        session.query(db.Project)
+        .options(
+            selectinload(db.Project.pages).selectinload(db.Page.revisions)
+        )
+        .all()
+    )
 
     export_data = {"projects": []}
     for project in projects:
