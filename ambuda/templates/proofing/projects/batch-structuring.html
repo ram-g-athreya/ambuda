@@ -350,9 +350,10 @@ function batchStructuring() {
         const start = i === pageIndex ? blockIndex + 1 : 0;
         for (let j = start; j < page.blocks.length; j++) {
           const block = page.blocks[j];
-          if (block.manualNumber) {
-            // Can't propagate past this.
-            return;
+
+          // Skip blocks if they belong to other texts.
+          if (block.text !== firstBlock.text) {
+            continue;
           }
 
           // Numbering applies only to verses and paragraphs.
@@ -360,9 +361,9 @@ function batchStructuring() {
             continue;
           }
 
-          // Skip blocks if they belong to other texts.
-          if (block.text !== firstBlock.text) {
-            continue;
+          if (block.manualNumber) {
+            // Can't propagate past this.
+            return;
           }
 
           block.n = `${prefix}${next}`;

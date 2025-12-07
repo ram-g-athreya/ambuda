@@ -772,6 +772,7 @@ class BlockDiff(BaseModel):
 class PageDiff(BaseModel):
     slug: str
     blocks: list[BlockDiff]
+    ignore: bool = False
 
 
 class ProjectDiff(BaseModel):
@@ -816,6 +817,9 @@ def batch_structuring(slug):
         page_map = {p.slug: p for p in pages}
 
         for page_diff in project_diff.pages:
+            if page_diff.ignore:
+                continue
+
             page_slug = page_diff.slug
             if page_slug not in page_map:
                 errors.append(f"Page {page_slug} not found")
