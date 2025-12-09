@@ -5,9 +5,8 @@
 <p><i>A breakthrough Sanskrit library</i></p>
 </div>
 
-[Ambuda](https://ambuda.org) is an online Sanskrit library whose mission is to make Sanskrit
-literature accessible to all. This repository contains Ambuda's core code, and this README will
-show you how to build it.
+[Ambuda](https://ambuda.org) is an online Sanskrit library. This repository contains Ambuda's core
+code, and this README will show you how to build and change it.
 
 
 Contents
@@ -22,14 +21,24 @@ Contents
 Quickstart
 ----------
 
+This quickstart will show you how to:
+
+- start Ambuda with Docker
+- create an admin user
+- upload content to the site
+
+
+## Starting Ambuda with Docker
+
 The quickest way to run Ambuda on your computer is to use `docker compose` from your command line.
 
-- You can install `docker compose` through either the [Docker website][docker] or your favorite
-package manager. If you have a Unix machine and don't like Docker Desktop, we recommend
-[Colima][colima].
-
-[docker]: https://docs.docker.com/get-docker/
-[colima]: https://github.com/abiosoft/colima
+> [!TIP]
+> You can install `docker compose` through either the [Docker website][docker] or your favorite
+> package manager. If you have a Unix machine and don't like Docker Desktop, we recommend
+> [Colima][colima].
+>
+> [docker]: https://docs.docker.com/get-docker/
+> [colima]: https://github.com/abiosoft/colima
 
 Once you have `docker` configured, starting the site is simple:
 
@@ -54,24 +63,53 @@ This command will do the following:
 
 To quit, press `Ctrl+C` to stop all services.
 
+> [!TIP]
+> If you ever run into build issues with `make ambuda-dev`, first run `make ambuda-dev-rebuild`
+> then try again.
+
+
+## Creating an admin user
+
+Once the Docker service is up, create an admin user so that you can log in:
+
+```
+make ambuda-dev-shell
+
+# Inside the shell
+
+# This command creates a new user.
+> uv run cli.py create-user
+
+# This command assigns the `admin` role to your new user.
+> uv run cli.py add-role --username <your-username> --role admin
+```
+
+After you've created your admin user, go to `http://localhost:5000/sign-in` to sign in.
+
+## Uploading content to the site
+
+(Under revision.)
+
+Once you've logged in as an admin user go to `https://localhost:5000/admin/` to open the Admin UI.
+
 
 Architecture
 ------------
 
 (Under revision.)
 
+Essentials:
+
+- Web backend: Flask
+- Task runner: Celery, with a Redis message broker.
+- Frontend: Alpine.js and small amounts of Typescript.
+- Storage: S3
+
 
 Documentation
 -------------
 
 (Under revision.)
-
-A full technical reference for this repository can be found here:
-
-https://ambuda.readthedocs.io/en/latest/
-
-It includes installation instructions, architecture notes, and other reference
-documentation about Ambuda's technical design.
 
 
 Contributing

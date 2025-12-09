@@ -97,6 +97,11 @@ ambuda-dev:
 	@mkdir -p data/database data/file-uploads data/vidyut
 	docker compose -f docker-compose.dev.yml up
 
+# Build the Docker image. You can also run this if you encounter any build issues.
+ambuda-dev-build:
+	docker compose -f docker-compose.dev.yml build
+
+# Start a shell inside the docker image. (Useful for CLI commands.)
 ambuda-dev-shell:
 	docker compose -f docker-compose.dev.yml exec web /bin/bash
 
