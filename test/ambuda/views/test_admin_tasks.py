@@ -413,6 +413,7 @@ def test_import_projects_and_export_projects(admin_client):
                 "author_id": Any,
                 "status_id": Any,
                 "created_at": Any,
+                "batch_id": Any,
                 "summary": "Test summary",
                 "content": "Test content",
             },
