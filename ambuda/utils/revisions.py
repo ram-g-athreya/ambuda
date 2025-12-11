@@ -19,6 +19,7 @@ def add_revision(
     author_id: int,
     status: str | None = None,
     status_id: int | None = None,
+    batch_id: int | None = None,
 ) -> int:
     """Add a new revision for a page."""
     # If this doesn't update any rows, there's an edit conflict.
@@ -58,6 +59,7 @@ def add_revision(
         content=content,
         author_id=author_id,
         status_id=status_id,
+        batch_id=batch_id,
     )
     session.add(revision_)
     session.commit()

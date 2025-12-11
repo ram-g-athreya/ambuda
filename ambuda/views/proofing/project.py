@@ -811,6 +811,12 @@ def batch_structuring(slug):
 
         project_diff = ProjectDiff.model_validate(data)
 
+        # Group all batch changes with a batch ID so we can revert/dedupe later.
+        session = q.get_session()
+        revision_batch = db.RevisionBatch(user_id=current_user.id)
+        session.add(revision_batch)
+        session.flush()  # Get the batch ID
+
         changed_pages = []
         unchanged_pages = []
         errors = []
@@ -870,7 +876,7 @@ def batch_structuring(slug):
                 errors.append(f"Could not parse edits for {page_slug}.")
                 continue
 
-            new_structured_page = ProofPage(blocks=new_blocks)
+            new_structured_page = ProofPage(blocks=new_blocks, id=page.id)
             new_content = new_structured_page.to_xml_string()
             if old_content == new_content:
                 unchanged_pages.append(page_slug)
@@ -884,6 +890,7 @@ def batch_structuring(slug):
                     version=page.version,
                     author_id=current_user.id,
                     status_id=page.status_id,
+                    batch_id=revision_batch.id,
                 )
                 changed_pages.append(page_slug)
             except Exception as e:

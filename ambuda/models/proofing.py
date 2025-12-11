@@ -189,6 +189,27 @@ class PageStatus(Base):
         return self.name
 
 
+class RevisionBatch(Base):
+    """A batch of revisions created together.
+
+    Used to track and dedupe related revisions.
+    """
+
+    __tablename__ = "proof_revision_batches"
+
+    #: Primary key.
+    id = pk()
+    #: The user who created this batch.
+    user_id = foreign_key("users.id")
+    #: Timestamp at which this batch was created.
+    created_at = Column(
+        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
+    )
+
+    #: The user who created this batch.
+    user = relationship("User", backref="revision_batches")
+
+
 class Revision(Base):
     """A specific page revision.
 
@@ -205,6 +226,10 @@ class Revision(Base):
     page_id = foreign_key("proof_pages.id")
     #: The author of this revision.
     author_id = foreign_key("users.id")
+    #: The batch this revision belongs to (for bulk operations).
+    batch_id = Column(
+        Integer, ForeignKey("proof_revision_batches.id"), index=True, nullable=True
+    )
     #: Page status
     status_id = Column(
         Integer, ForeignKey("proof_page_statuses.id"), index=True, nullable=False
@@ -224,6 +249,8 @@ class Revision(Base):
     project = relationship("Project")
     #: The status of this page.
     status = relationship("PageStatus", backref="revisions")
+    #: The batch this revision belongs to.
+    batch = relationship("RevisionBatch", backref="revisions")
 
     @property
     def created(self):
