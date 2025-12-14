@@ -11,8 +11,7 @@ from ambuda import database as db
 def _inner_xml(el):
     buf = [el.text]
     for child in el:
-        buf.append(ET.tostring(child).decode("utf-8"))
-        buf.append(child.tail or "")
+        buf.append(ET.tostring(child, encoding="unicode"))
     return "".join(buf)
 
 
