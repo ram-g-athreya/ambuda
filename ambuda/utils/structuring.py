@@ -8,6 +8,14 @@ import xml.etree.ElementTree as ET
 from ambuda import database as db
 
 
+def _inner_xml(el):
+    buf = [el.text]
+    for child in el:
+        buf.append(ET.tostring(child).decode("utf-8"))
+        buf.append(child.tail or "")
+    return "".join(buf)
+
+
 @dc.dataclass
 class ProofBlock:
     """A block of structured content from the proofreading environment."""
@@ -53,7 +61,7 @@ class ProofPage:
         blocks = []
         for el in root:
             block_type = el.tag
-            content = el.text or ""
+            el_content = _inner_xml(el)
             lang = el.get("lang", "sa")
             text = el.get("text", "")
             n = el.get("n", "")
@@ -63,7 +71,7 @@ class ProofPage:
             blocks.append(
                 ProofBlock(
                     type=block_type,
-                    content=content,
+                    content=el_content,
                     lang=lang,
                     text=text,
                     n=n,
@@ -135,7 +143,11 @@ class ProofPage:
         root.text = "\n"
         for block in self.blocks:
             el = ET.SubElement(root, block.type)
-            el.text = block.content.strip()
+            temp_wrapper = DET.fromstring(f"<temp>{block.content.strip()}</temp>")
+            el.text = temp_wrapper.text
+            for child in temp_wrapper:
+                el.append(child)
+
             if block.lang:
                 el.set("lang", block.lang)
             if block.text:

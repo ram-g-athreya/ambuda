@@ -216,14 +216,14 @@
         </label>
         <button @click="toggleImageViewer(item.slug)"
                 class="text-xs px-2 py-0.5 border rounded hover:bg-slate-100"
-                :class="imageViewerPage === item.slug ? 'bg-blue-100 border-blue-400' : 'border-slate-300'">
-          <span x-show="imageViewerPage !== item.slug">Show image</span>
-          <span x-show="imageViewerPage === item.slug">Hide image</span>
+                :class="openImageViewers.includes(item.slug) ? 'bg-blue-100 border-blue-400' : 'border-slate-300'">
+          <span x-show="!openImageViewers.includes(item.slug)">Show image</span>
+          <span x-show="openImageViewers.includes(item.slug)">Hide image</span>
         </button>
       </div>
 
       <div class="flex gap-4">
-        <div :class="imageViewerPage === item.slug ? 'w-1/2' : 'w-full'" class="transition-all">
+        <div :class="openImageViewers.includes(item.slug) ? 'w-1/2' : 'w-full'">
           <div class="space-y-3" x-show="!item.ignorePage">
         <template x-for="(block, index) in item.blocks" :key="index">
           <div x-show="filterText === '' || (block.text || '') === filterText"
@@ -290,15 +290,16 @@
                 <span class="text-[11px]">merge</span>
               </label>
 
-              <div class="ml-auto relative" @click.away="openDropdown = null">
+              <div class="ml-auto relative">
                 <button @click="openDropdown = (openDropdown === `${item.slug}-${index}` ? null : `${item.slug}-${index}`)"
                         type="button"
                         class="text-[11px] px-2 py-0.5 bg-slate-200 hover:bg-slate-300 rounded border border-slate-400"
                         title="Block actions">
-                  ⋯
+                  &hellip;
                 </button>
                 <div x-show="openDropdown === `${item.slug}-${index}`"
                      x-transition
+                     @click.outside="openDropdown = null"
                      class="absolute right-0 mt-1 bg-white border border-slate-300 rounded shadow-lg z-10 min-w-[140px]">
                   <button @click="addBlockBelow(item, index); openDropdown = null"
                           type="button"
@@ -336,15 +337,14 @@
           </div>
         </div>
 
-        <div x-show="imageViewerPage === item.slug"
-             x-transition
+        <div x-show="openImageViewers.includes(item.slug)"
              class="w-1/2">
           <div class="bg-slate-100 border border-slate-300 rounded sticky top-[180px]">
             <div class="bg-slate-200 px-3 py-2 border-b border-slate-300 flex justify-between items-center">
               <h4 class="text-xs font-medium">
                 Page <span x-text="item.slug"></span>
               </h4>
-              <button @click="toggleImageViewer(null)"
+              <button @click="toggleImageViewer(item.slug)"
                       class="text-xs px-2 py-1 hover:bg-slate-300 rounded">
                 ✕
               </button>
@@ -376,8 +376,8 @@ function batchEdit() {
     pages: {{ pages_with_content|tojson }},
     currentPage: 1,
     pagesPerPage: 50,
-    imageViewerPage: null,
-    osdViewer: null,
+    openImageViewers: [],
+    osdViewers: {},
     helpOpen: false,
 
     init() {
@@ -515,14 +515,15 @@ function batchEdit() {
     },
 
     toggleImageViewer(pageSlug) {
-      if (this.imageViewerPage === pageSlug) {
-        this.imageViewerPage = null;
-        if (this.osdViewer) {
-          this.osdViewer.destroy();
-          this.osdViewer = null;
+      const index = this.openImageViewers.indexOf(pageSlug);
+      if (index > -1) {
+        this.openImageViewers.splice(index, 1);
+        if (this.osdViewers[pageSlug]) {
+          this.osdViewers[pageSlug].destroy();
+          delete this.osdViewers[pageSlug];
         }
       } else {
-        this.imageViewerPage = pageSlug;
+        this.openImageViewers.push(pageSlug);
         this.$nextTick(() => {
           this.initializeOSD(pageSlug);
         });
@@ -533,11 +534,11 @@ function batchEdit() {
       const imageUrl = '{{ url_for("site.page_image", project_slug=project.slug, page_slug="PAGE_SLUG") }}'.replace('PAGE_SLUG', pageSlug);
       const viewerId = 'osd-viewer-' + pageSlug;
 
-      if (this.osdViewer) {
-        this.osdViewer.destroy();
+      if (this.osdViewers[pageSlug]) {
+        this.osdViewers[pageSlug].destroy();
       }
 
-      this.osdViewer = OpenSeadragon({
+      this.osdViewers[pageSlug] = OpenSeadragon({
         id: viewerId,
         tileSources: {
           type: 'image',
@@ -1103,7 +1104,7 @@ function batchEdit() {
       };
 
       this.$refs.structureData.value = JSON.stringify(structure);
-      this.$el.closest('form').submit();
+      this.$refs.structureData.form.submit();
     },
 
     submitStructure() {
