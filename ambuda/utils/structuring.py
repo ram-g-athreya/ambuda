@@ -8,11 +8,30 @@ import xml.etree.ElementTree as ET
 from ambuda import database as db
 
 
+DEFAULT_PRINT_PAGE_NUMBER = "-"
+
+
 def _inner_xml(el):
-    buf = [el.text]
+    buf = [el.text or ""]
     for child in el:
         buf.append(ET.tostring(child, encoding="unicode"))
     return "".join(buf)
+
+
+def _rewrite_to_tei_xml(xml):
+    for el in xml.iter():
+        match el.tag:
+            case "verse":
+                el.tag = "lg"
+            case "p":
+                pass
+            case "error":
+                el.tag = "sic"
+            case "fix":
+                el.tag = "corr"
+            case _:
+                el.tag = None
+                el.text = None
 
 
 @dc.dataclass
@@ -61,11 +80,16 @@ class ProofPage:
         for el in root:
             block_type = el.tag
             el_content = _inner_xml(el)
-            lang = el.get("lang", "sa")
-            text = el.get("text", "")
-            n = el.get("n", "")
-            mark = el.get("mark", "")
-            merge_next = el.get("merge-text", "false").lower() == "true"
+            lang = el.get("lang", None)
+            text = el.get("text", None)
+            n = el.get("n", None)
+            mark = el.get("mark", None)
+            # Earlier versions had a typo "merge-text", so continue to support it until all old
+            # projects are migrated off.
+            merge_next = (
+                el.get("merge-next", "false").lower() == "true"
+                or el.get("merge-text", "false").lower() == "true"
+            )
 
             blocks.append(
                 ProofBlock(
@@ -130,8 +154,8 @@ class ProofPage:
                     type=block_type,
                     content=content,
                     lang=language,
-                    n="",
-                    text="",
+                    n=None,
+                    text=None,
                     mark=mark,
                 )
             )
@@ -156,7 +180,7 @@ class ProofPage:
             if block.mark:
                 el.set("mark", block.mark)
             if block.merge_next:
-                el.set("merge-text", "true")
+                el.set("merge-next", "true")
             el.tail = "\n"
         return ET.tostring(root, encoding="unicode")
 
@@ -190,7 +214,7 @@ def detect_language(text: str) -> str:
     latin_count = len(re.findall(r"[a-zA-Z]", text))
 
     # mostly latin --> mark as English
-    if latin_count / len(text) > 0.5:
+    if latin_count / len(text) > 0.90:
         return "en"
 
     tokens = set(text.split())
@@ -247,7 +271,9 @@ class ProofProject:
 
         return ProofProject(pages=pages)
 
-    def to_tei_document(self, target: str, page_numbers: list[str]) -> TEIDocument:
+    def to_tei_document(
+        self, target: str, page_numbers: list[str]
+    ) -> tuple[TEIDocument, list[str]]:
         """Convert the project to a TEI document for publication.
 
         Approach:
@@ -262,10 +288,12 @@ class ProofProject:
         :return: a complete document.
         """
 
+        errors = []
+
         def _iter_blocks():
             for i, page in enumerate(self.pages):
                 for block in page.blocks:
-                    if block.text == target:
+                    if block.text == target and block.n:
                         yield (i, page, block)
 
         tei_tag_mapping = {
@@ -286,19 +314,7 @@ class ProofProject:
             # TODO: double XML parse (once to create Block, once here.)
             # In the long run, use TEI XML as the backing store everywhere?
             block_xml = DET.fromstring(f"<{block.type}>{block.content}</{block.type}>")
-            for el in block_xml.iter():
-                match el.tag:
-                    case "verse":
-                        el.tag = "lg"
-                    case "p":
-                        pass
-                    case "error":
-                        el.tag = "sic"
-                    case "fix":
-                        el.tag = "corr"
-                    case _:
-                        el.tag = None
-                        el.text = None
+            _rewrite_to_tei_xml(block_xml)
 
             tag_name = block_xml.tag
             if block.n in tree_map:
@@ -312,18 +328,31 @@ class ProofProject:
             root_has_children = len(root)
             root_has_text = root.text is not None
 
-            print_page_number = page_numbers[page_index]
+            try:
+                print_page_number = page_numbers[page_index]
+            except IndexError:
+                print_page_number = DEFAULT_PRINT_PAGE_NUMBER
+
             match tag_name:
                 case "lg":
-                    assert not root.text, "<lg> elements should have no direct text."
+                    if root.text:
+                        errors.append("<lg> elements should have no direct text.")
+                        continue
+
                     lines = [x.strip() for x in block.content.splitlines() if x.strip()]
                     # One <l> element per line.
                     for line in lines:
+                        # HACK: inline markup. Use <p> so the root tag isn't cleared.
+                        temp = DET.fromstring(f"<p>{line}</p>")
+                        _rewrite_to_tei_xml(temp)
+
                         L = ET.SubElement(root, "l")
-                        L.text = line
+                        L.text = temp.text
+                        L.extend(temp)
                 case "p":
                     for el in block_xml.iter():
-                        el.text = el.text.replace("-\n", "").replace("\n", " ")
+                        if el.text:
+                            el.text = el.text.replace("-\n", "").replace("\n", " ")
                         if el.tail:
                             el.tail = el.tail.replace("-\n", "").replace("\n", " ")
 
@@ -363,4 +392,5 @@ class ProofProject:
 
             section.blocks.append(block)
 
-        return TEIDocument(sections=list(tei_sections.values()))
+        doc = TEIDocument(sections=list(tei_sections.values()))
+        return (doc, errors)

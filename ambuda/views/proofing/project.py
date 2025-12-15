@@ -1088,7 +1088,10 @@ def _create_tei_document(project_, target: str) -> TEIDocument:
     rules = project_utils.parse_page_number_spec(project_.page_numbers)
     page_numbers = project_utils.apply_rules(len(project_.pages), rules)
     proof_project = ProofProject.from_revisions(revisions)
-    return proof_project.to_tei_document(target=target, page_numbers=page_numbers)
+    doc, _errors = proof_project.to_tei_document(
+        target=target, page_numbers=page_numbers
+    )
+    return doc
 
 
 @bp.route("/<slug>/publish/create", methods=["POST"])
