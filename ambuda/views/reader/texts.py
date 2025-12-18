@@ -1,8 +1,19 @@
 """Views related to texts: title pages, sections, verses, etc."""
 
 import json
+import os
+import tempfile
 
-from flask import Blueprint, abort, jsonify, render_template, url_for
+from flask import (
+    Blueprint,
+    Response,
+    abort,
+    jsonify,
+    render_template,
+    url_for,
+    send_file,
+    after_this_request,
+)
 from vidyut.lipi import transliterate, Scheme
 
 import ambuda.database as db
@@ -10,12 +21,16 @@ import ambuda.queries as q
 from ambuda.consts import TEXT_CATEGORIES
 from ambuda.models.texts import TextConfig
 from ambuda.utils import text_utils
+from ambuda.utils import text_exports
 from ambuda.utils import xml
 from ambuda.utils.json_serde import AmbudaJSONEncoder
+from ambuda.utils.text_quality import validate
 from ambuda.views.api import bp as api
 from ambuda.views.reader.schema import Block, Section
 
 bp = Blueprint("texts", __name__)
+downloads = Blueprint("downloads", __name__, url_prefix="/downloads")
+bp.register_blueprint(downloads)
 
 # A hacky list that decides which texts have parse data.
 HAS_NO_PARSE = {
@@ -82,6 +97,7 @@ def text(slug):
     text = q.text(slug)
     if text is None:
         abort(404)
+    assert text
 
     try:
         config = TextConfig.model_validate_json(text.config)
@@ -122,6 +138,7 @@ def text_about(slug):
     text = q.text(slug)
     if text is None:
         abort(404)
+    assert text
 
     header_data = xml.parse_tei_header(text.header)
     return render_template(
@@ -141,32 +158,117 @@ def text_resources(slug):
     return render_template("texts/text-resources.html", text=text)
 
 
-# TODO: enable once this is protected.
-def plain_text_download(slug):
+@bp.route("/<slug>/validate")
+def validate_text(slug):
     text = q.text(slug)
-    if text is None:
+    if text is None or not text.supports_text_export:
         abort(404)
+    assert text
 
-    def generate():
-        """Generator to avoid loading the whole text in memory (for massive texts)."""
-        is_first = True
-        for section in text.sections:
-            for block in section.blocks:
-                if not is_first:
-                    yield "\n\n"
-                is_first = False
+    report = validate(text)
+    return render_template("texts/text-validate.html", text=text, report=report)
 
-                yield f"# {block.slug}\n"
-                xml = DET.fromstring(block.xml)
-                for el in xml.iter():
-                    if el.tag == "l":
-                        el.tail = "\n"
-                    el.tag = None
-                yield ET.tostring(xml, encoding="unicode").strip()
 
-    response = Response(generate(), mimetype="text/plain")
-    response.headers["Content-Disposition"] = f'attachment; filename="{slug}.txt"'
-    return response
+@downloads.route("/<slug>.txt")
+def download_plain_text(slug):
+    text = q.text(slug)
+    if text is None or not text.supports_text_export:
+        abort(404)
+    assert text
+
+    temp = tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt")
+    temp_path = temp.name
+    temp.close()
+    text_exports.create_text_file(text, temp_path)
+
+    @after_this_request
+    def remove_file(response):
+        try:
+            os.remove(temp_path)
+        except Exception as e:
+            pass
+        return response
+
+    return send_file(temp_path, as_attachment=True, download_name=f"{slug}.txt")
+
+
+@downloads.route("/<slug>.xml")
+def download_xml(slug):
+    text = q.text(slug)
+    if text is None or not text.supports_text_export:
+        abort(404)
+    assert text
+
+    temp = tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".xml")
+    temp_path = temp.name
+    temp.close()
+    text_exports.create_xml_file(text, temp_path)
+
+    @after_this_request
+    def remove_file(response):
+        try:
+            os.remove(temp_path)
+        except Exception as e:
+            pass
+        return response
+
+    return send_file(temp_path, as_attachment=True, download_name=f"{slug}.xml")
+
+
+@downloads.route("/<slug>-devanagari.pdf")
+def download_pdf(slug):
+    text = q.text(slug)
+    if text is None or not text.supports_text_export:
+        abort(404)
+    assert text
+
+    temp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+    temp_path = temp.name
+    temp.close()
+    text_exports.create_pdf(text, temp_path)
+
+    @after_this_request
+    def remove_file(response):
+        try:
+            os.remove(temp_path)
+        except Exception as e:
+            pass
+        return response
+
+    return send_file(
+        temp_path,
+        mimetype="application/pdf",
+        as_attachment=False,
+        download_name=f"{slug}.pdf",
+    )
+
+
+@downloads.route("/<slug>-tokens.csv")
+def download_tokens(slug):
+    text = q.text(slug)
+    if text is None or not text.has_parse_data:
+        abort(404)
+    assert text
+
+    temp = tempfile.NamedTemporaryFile(suffix=".csv", delete=False)
+    temp_path = temp.name
+    temp.close()
+    text_exports.create_tokens(text, temp_path)
+
+    @after_this_request
+    def remove_file(response):
+        try:
+            os.remove(temp_path)
+        except Exception as e:
+            pass
+        return response
+
+    return send_file(
+        temp_path,
+        mimetype="text/csv",
+        as_attachment=False,
+        download_name=f"{slug}-tokens.csv",
+    )
 
 
 @bp.route("/<text_slug>/<section_slug>")
@@ -175,6 +277,7 @@ def section(text_slug, section_slug):
     text_ = q.text(text_slug)
     if text_ is None:
         abort(404)
+    assert text_
 
     try:
         prev, cur, next_ = _prev_cur_next(text_.sections, section_slug)
@@ -296,6 +399,7 @@ def reader_json(text_slug, section_slug):
     text_ = q.text(text_slug)
     if text_ is None:
         abort(404)
+    assert text_
 
     try:
         prev, cur, next_ = _prev_cur_next(text_.sections, section_slug)

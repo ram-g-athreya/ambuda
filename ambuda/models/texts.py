@@ -13,7 +13,8 @@ from datetime import UTC, datetime
 from pydantic import BaseModel, Field
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, JSON, Table, event
 from sqlalchemy import Text as _Text
-from sqlalchemy.orm import relationship
+from sqlalchemy import select, exists
+from sqlalchemy.orm import relationship, Mapped, mapped_column, object_session
 
 from ambuda.models.base import Base, foreign_key, pk
 
@@ -35,19 +36,19 @@ class Text(Base):
     #: Primary key.
     id = pk()
     #: Human-readable ID, which we display in the URL.
-    slug = Column(String, unique=True, nullable=False)
+    slug: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     #: The title of this text.
-    title = Column(String, nullable=False)
+    title: Mapped[str] = mapped_column(String, nullable=False)
     #: Metadata for this text, as a <teiHeader> element.
     #: This is public-facing metadata as part of a TEI document.
-    header = Column(_Text)
+    header: Mapped[str | None] = mapped_column(_Text)
     #: Additional metadata for this text as a JSON document.
     #: This is mainly for ambuda-internal notes on heading names, etc.
     # NOTE: `meta` is reserved by WTForms and `metadata` has other meanings in sqlalchemy,
     # NOTE: so just call this `config`.
     #: The schema is defined in `TextConfig`.
     config = Column(JSON, nullable=True)
-    language = Column(String, nullable=False, default="sa")
+    language: Mapped[str] = mapped_column(String, nullable=False, default="sa")
 
     #: Timestamp at which this text was created.
     #: Nullable for legacy reasons.
@@ -77,8 +78,34 @@ class Text(Base):
     # The parent text that this text corresponds to.
     parent = relationship("Text", remote_side=[id], backref="children")
 
-    def __str__(self):
+    # DEPRECATED parse data
+    block_parses = relationship("BlockParse", backref="text")
+
+    def __str__(self) -> str:
         return self.slug
+
+    @property
+    def supports_text_export(self) -> bool:
+        """Temporary prop while we support Celery-based export."""
+        return len(self.sections) < 20
+
+    @property
+    def has_parse_data(self) -> bool:
+        from ambuda.models.parse import BlockParse, TokenBlock
+
+        session = object_session(self)
+        if not session:
+            return False
+
+        return (
+            session.scalar(
+                select(
+                    exists().where(BlockParse.text_id == self.id)
+                    | exists().where(TokenBlock.text_id == self.id)
+                )
+            )
+            or False
+        )
 
 
 @event.listens_for(Text, "before_insert")
@@ -112,9 +139,9 @@ class TextSection(Base):
     #: Slugs are hierarchical, with different levels of the hierarchy separated
     #: by "." characters. At serving time, we rely on this property to properly
     #: organize a text into different sections.
-    slug = Column(String, index=True, nullable=False)
+    slug: Mapped[str] = mapped_column(String, index=True, nullable=False)
     #: The title of this section.
-    title = Column(String, nullable=False)
+    title: Mapped[str] = mapped_column(String, nullable=False)
     #: An ordered list of the blocks contained within this section.
     blocks = relationship(
         "TextBlock", backref="section", order_by=lambda: TextBlock.n, cascade="delete"
@@ -150,7 +177,7 @@ class TextBlock(Base):
     #: The proofing page this block came from.
     page_id = foreign_key("proof_pages.id", nullable=True)
     #: Human-readable ID, which we display in the URL.
-    slug = Column(String, index=True, nullable=False)
+    slug: Mapped[str] = mapped_column(index=True, nullable=False)
     #: Raw XML content, which we translate into HTML at serving time.
     xml = Column(_Text, nullable=False)
     #: (internal-only) Block A comes before block B iff A.n < B.n.

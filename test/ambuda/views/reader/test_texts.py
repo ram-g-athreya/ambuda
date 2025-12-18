@@ -63,3 +63,15 @@ def test_block_htmx(client):
     # Test is unchanged because we assume that the source text already in
     # Devanagari, so we don't apply transliteration.
     assert "<section>agniH</section>" in resp.text
+
+
+def test_download_pdf(client):
+    resp = client.get("/texts/downloads/pariksha-devanagari.pdf")
+    assert resp.status_code == 200
+    assert resp.content_type == "application/pdf"
+    assert resp.data.startswith(b"%PDF")
+
+
+def test_download_pdf__missing(client):
+    resp = client.get("/texts/unknown-text/download-pdf")
+    assert resp.status_code == 404

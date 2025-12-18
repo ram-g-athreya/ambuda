@@ -1,4 +1,5 @@
 import functools
+from pathlib import Path
 
 import boto3
 
@@ -22,8 +23,7 @@ class S3Path:
         path = path.removeprefix(_prefix)
 
         bucket, _, key = path.partition("/")
-        self.bucket = bucket
-        self.key = key
+        return S3Path(bucket, key)
 
     def __str__(self):
         return self.path
@@ -53,12 +53,10 @@ class S3Path:
         self.write_bytes(content.encode(encoding))
 
     def write_bytes(self, content: bytes):
-        _get_client().put_object(
-            Bucket=self.bucket, Key=self.key, Body=content.encode(encoding)
-        )
+        _get_client().put_object(Bucket=self.bucket, Key=self.key, Body=content)
 
-    def upload_file(self, local_path: str):
+    def upload_file(self, local_path: str | Path):
         _get_client().upload_file(local_path, self.bucket, self.key)
 
-    def download_file(self, local_path: str):
-        _get_client().download_file(local_path, self.bucket, self.key)
+    def download_file(self, local_path: str | Path):
+        _get_client().download_file(self.bucket, self.key, local_path)

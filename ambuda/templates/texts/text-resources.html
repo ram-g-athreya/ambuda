@@ -14,6 +14,19 @@
 {% set smith = "https://bombay.indology.info/" %}
 
 <div class="prose">
+
+{% if text.supports_text_export %}
+<h2>Downloads</h2>
+<ul>
+  <li><a href="{{ url_for('texts.downloads.download_xml', slug=text.slug) }}">XML</a></li>
+  <li><a href="{{ url_for('texts.downloads.download_plain_text', slug=text.slug) }}">Plain text</a></li>
+  <li><a href="{{ url_for('texts.downloads.download_pdf', slug=text.slug) }}">PDF (Devanagari)</a></li>
+  {% if text.has_parse_data %}
+  <li><a href="{{ url_for('texts.downloads.download_tokens', slug=text.slug) }}">Token data (CSV)</a></li>
+  {% endif %}
+</ul>
+{% endif %}
+
   <p>Most of our texts are sourced from a custom snapshot of GRETIL, which you
   can find <a href="{{ gretil }}">here</a>. Our {{ 'rAmAyaNam'|d }} and {{
   'mahAbhAratam'|d }} texts are sourced from <a href="{{ smith }}">John Smith's

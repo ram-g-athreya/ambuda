@@ -1,0 +1,44 @@
+{% extends 'base-text.html' %}
+{% import 'macros/library.html' as m %}
+
+
+{% block title %}{{ text.title | devanagari }} {{ _('| Ambuda') }}{% endblock %}
+
+
+{% block content %}
+{{ m.text_header(text) }}
+{{ m.text_tabs(text=text, active='validate') }}
+
+<div class="prose">
+  <h2>Validation Report</h2>
+
+  <div class="space-y-4 not-prose">
+    {% for result in report.results %}
+      {% if result.num_ok == result.num_total and result.num_total > 0 %}
+        {% set status_class = 'border-l-4 border-green-500 bg-green-50' %}
+        {% set icon = '✓' %}
+        {% set icon_class = 'text-green-700' %}
+        {% set status_text = 'Passed' %}
+      {% elif result.num_ok == 0 %}
+        {% set status_class = 'border-l-4 border-red-500 bg-red-50' %}
+        {% set icon = '✗' %}
+        {% set icon_class = 'text-red-700' %}
+        {% set status_text = 'Failed' %}
+      {% else %}
+        {% set status_class = 'border-l-4 border-orange-500 bg-orange-50' %}
+        {% set icon = '⚠' %}
+        {% set icon_class = 'text-orange-700' %}
+        {% set status_text = 'Partial' %}
+      {% endif %}
+
+      <div class="p-4 {{ status_class }} rounded">
+        <div class="font-semibold text-gray-900">{{ result.text }}</div>
+        <div class="text-sm mt-1 {{ icon_class }}">
+          <span class="font-bold">{{ icon }}</span> {{ status_text }} ({{ result.num_ok }}/{{ result.num_total }})
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+
+{% endblock %}
