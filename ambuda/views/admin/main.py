@@ -235,6 +235,11 @@ MODEL_CONFIG = [
                 slug="add-genre",
                 handler=tasks.add_genre_to_texts,
             ),
+            Task(
+                name="Create exports",
+                slug="create-exports",
+                handler=tasks.create_exports,
+            ),
         ],
         display_field="slug",
     ),
@@ -248,6 +253,11 @@ MODEL_CONFIG = [
         list_columns=["id", "text_id", "slug", "title"],
         category=Category.TEXTS,
         read_only=True,
+    ),
+    ModelConfig(
+        model=db.TextExport,
+        list_columns=["id", "slug"],
+        category=Category.TEXTS,
     ),
     ModelConfig(
         model=db.Thread,

@@ -104,6 +104,12 @@ def text_section(text_id: int, slug: str) -> db.TextSection | None:
     return session.scalars(stmt).first()
 
 
+def text_export(slug: str) -> db.TextExport | None:
+    session = get_session()
+    stmt = select(db.TextExport).filter_by(slug=slug)
+    return session.scalars(stmt).first()
+
+
 def block(text_id: int, slug: str) -> db.TextBlock | None:
     session = get_session()
     stmt = select(db.TextBlock).filter_by(text_id=text_id, slug=slug)

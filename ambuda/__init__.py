@@ -12,6 +12,7 @@ import sentry_sdk
 from dotenv import load_dotenv
 from flask import Flask, session
 from flask_babel import Babel, pgettext
+from flask_caching import Cache
 from sentry_sdk.integrations.flask import FlaskIntegration
 from sqlalchemy import exc
 
@@ -58,7 +59,7 @@ def _initialize_db_session(app, config_name: str):
         """Reset session state to prevent caching and memory leaks."""
         queries.get_session_class().remove()
 
-    if config_name == config.PRODUCTION:
+    if config_name == config.Env.PRODUCTION:
         # The hook below hides database errors. So, install the hook only if
         # we're in production.
 
@@ -92,7 +93,7 @@ def create_app(config_env: str):
     #
     # "Configuration should happen as early as possible in your application's
     # lifecycle." -- Sentry docs
-    if config_env == config.PRODUCTION:
+    if config_env == config.Env.PRODUCTION:
         _initialize_sentry(config_spec.SENTRY_DSN)
 
     app = Flask(__name__)
@@ -102,7 +103,7 @@ def create_app(config_env: str):
 
     # Sanity checks
     assert config_env == config_spec.AMBUDA_ENVIRONMENT
-    if config_env != config.TESTING:
+    if config_env != config.Env.TESTING:
         with app.app_context():
             checks.check_database_uri(config_spec.SQLALCHEMY_DATABASE_URI)
 
@@ -124,6 +125,11 @@ def create_app(config_env: str):
 
     mailer.init_app(app)
 
+    cache = Cache(
+        app, config={"CACHE_TYPE": "FileSystemCache", "CACHE_DIR": "/tmp/ambuda-cache"}
+    )
+    app.cache = cache
+
     # Route extensions
     app.url_map.converters["list"] = ListConverter
 
@@ -141,7 +147,7 @@ def create_app(config_env: str):
     app.register_blueprint(texts, url_prefix="/texts")
 
     # Debug-only routes for local development.
-    if app.debug or config.TESTING:
+    if app.debug or config.Env.TESTING:
         from ambuda.views.debug import bp as debug_bp
 
         app.register_blueprint(debug_bp, url_prefix="/debug")
@@ -157,6 +163,7 @@ def create_app(config_env: str):
             "roman": filters.roman,
             "markdown": filters.markdown,
             "time_ago": filters.time_ago,
+            "human_readable_bytes": filters.human_readable_bytes,
         }
     )
     app.jinja_env.globals.update(

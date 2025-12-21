@@ -38,3 +38,17 @@ def test_time_ago(then, expected):
 
 def test_markdown():
     assert f.markdown("*test*") == "<p><em>test</em></p>\n"
+
+
+@pytest.mark.parametrize(
+    "input,expected",
+    [
+        (123, "123 B"),
+        (1024, "1.0 KiB"),
+        (1024**2, "1.0 MiB"),
+        (1024**3, "1.0 GiB"),
+        (1024**4, "1024.0 GiB"),
+    ],
+)
+def test_human_readable_bytes(input, expected):
+    assert f.human_readable_bytes(input) == expected

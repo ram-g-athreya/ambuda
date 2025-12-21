@@ -4,6 +4,7 @@ from datetime import datetime
 from pathlib import Path
 
 from flask import (
+    current_app,
     request,
     redirect,
     url_for,
@@ -23,6 +24,8 @@ from wtforms.validators import DataRequired
 import ambuda.database as db
 import ambuda.queries as q
 import ambuda.data_utils as data_utils
+from ambuda.utils.text_exports import ExportType
+from ambuda.tasks.text_exports import create_text_export
 from ambuda.utils.tei_parser import parse_document
 
 
@@ -585,3 +588,31 @@ def import_projects(model_name, selected_ids: list | None = None):
         form=form,
         **get_model_configs_context(),
     )
+
+
+def create_exports(model_name, selected_ids: list | None = None):
+    if not selected_ids:
+        flash("No texts selected", "error")
+        return redirect(url_for("admin.list_model", model_name=model_name))
+
+    session = q.get_session()
+    app_environment = current_app.config["AMBUDA_ENVIRONMENT"]
+    task_count = 0
+    for text_id in selected_ids:
+        text = session.get(db.Text, int(text_id))
+        if not text:
+            continue
+
+        for export_type in ExportType:
+            create_text_export.delay(
+                text_id=text.id,
+                export_type=export_type,
+                app_environment=app_environment,
+            )
+            task_count += 1
+
+    flash(
+        f"Started {task_count} export task(s) for {len(selected_ids)} text(s)",
+        "success",
+    )
+    return redirect(url_for("admin.list_model", model_name=model_name))

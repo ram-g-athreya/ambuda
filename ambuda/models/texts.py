@@ -77,6 +77,8 @@ class Text(Base):
     author = relationship("Author", backref="texts")
     # The parent text that this text corresponds to.
     parent = relationship("Text", remote_side=[id], backref="children")
+    # The exports associated with this text.
+    exports = relationship("TextExport", backref="text")
 
     # DEPRECATED parse data
     block_parses = relationship("BlockParse", backref="text")
@@ -177,7 +179,7 @@ class TextBlock(Base):
     #: The proofing page this block came from.
     page_id = foreign_key("proof_pages.id", nullable=True)
     #: Human-readable ID, which we display in the URL.
-    slug: Mapped[str] = mapped_column(index=True, nullable=False)
+    slug: Mapped[str] = mapped_column(String, index=True, nullable=False)
     #: Raw XML content, which we translate into HTML at serving time.
     xml = Column(_Text, nullable=False)
     #: (internal-only) Block A comes before block B iff A.n < B.n.
@@ -223,3 +225,34 @@ class Author(Base):
     def __str__(self):
         # Include slug because author names are not unique.
         return f"{self.name} ({self.slug})"
+
+
+class TextExport(Base):
+    """A catalog of text exports."""
+
+    __tablename__ = "text_exports"
+
+    id = pk()
+    #: The text this export belongs to.
+    text_id = foreign_key("texts.id")
+    #: A unique identifier for this export.
+    slug: Mapped[str] = mapped_column(String, unique=True)
+    #: The type of export (plain_text, xml, pdf, tokens).
+    export_type: Mapped[str] = mapped_column(String, nullable=False)
+    #: The path to this resource on S3.
+    s3_path: Mapped[str] = mapped_column(String)
+    #: Size in bytes
+    size: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: When this export was last updated.
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
+    )
+
+    @property
+    def export_config(self) -> "ExportConfig | None":
+        from ambuda.utils.text_exports import EXPORTS
+
+        try:
+            return next(x for x in EXPORTS if x.matches(self.slug))
+        except StopIteration:
+            return None

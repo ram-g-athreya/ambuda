@@ -17,6 +17,7 @@ package: From the Flask docs (emphasis added):
 
 import logging
 import os
+from enum import StrEnum
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -25,16 +26,18 @@ from flask import Flask
 # Load dotenv early so that `_env` will work in the class definitions below.
 load_dotenv()
 
-#: The test environment. For unit tests only.
-TESTING = "testing"
-#: The development environment. For local development.
-DEVELOPMENT = "development"
-#: The build environment. For build on github.
-BUILD = "build"
-#: The staging environment. For testing on staging.
-STAGING = "staging"
-#: The production environment. For production serving.
-PRODUCTION = "production"
+
+class Env(StrEnum):
+    #: The test environment. For unit tests only.
+    TESTING = "testing"
+    #: The development environment. For local development.
+    DEVELOPMENT = "development"
+    #: The build environment. For build on github.
+    BUILD = "build"
+    #: The staging environment. For testing on staging.
+    STAGING = "staging"
+    #: The production environment. For production serving.
+    PRODUCTION = "production"
 
 
 def _make_path(path: Path):
@@ -164,7 +167,7 @@ class UnitTestConfig:
 
     For a clean test setup, don't inherit from BaseConfig."""
 
-    AMBUDA_ENVIRONMENT = TESTING
+    AMBUDA_ENVIRONMENT = Env.TESTING
     TESTING = True
     SECRET_KEY = "insecure unit test secret"
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
@@ -188,7 +191,7 @@ class UnitTestConfig:
 class DevelopmentConfig(BaseConfig):
     """For local development."""
 
-    AMBUDA_ENVIRONMENT = DEVELOPMENT
+    AMBUDA_ENVIRONMENT = Env.DEVELOPMENT
     DEBUG = True
     #: If set, automatically reload Flask templates (including imports) when
     #: they change on disk.
@@ -201,7 +204,7 @@ class DevelopmentConfig(BaseConfig):
 class BuildConfig(BaseConfig):
     """For build on GitHub."""
 
-    AMBUDA_ENVIRONMENT = BUILD
+    AMBUDA_ENVIRONMENT = Env.BUILD
     DEBUG = True
     #: If set, automatically reload Flask templates (including imports) when
     #: they change on disk.
@@ -214,7 +217,7 @@ class BuildConfig(BaseConfig):
 class StagingConfig(BaseConfig):
     """For staging."""
 
-    AMBUDA_ENVIRONMENT = STAGING
+    AMBUDA_ENVIRONMENT = Env.STAGING
     DEBUG = True
     #: If set, automatically reload Flask templates (including imports) when
     #: they change on disk.
@@ -227,7 +230,7 @@ class StagingConfig(BaseConfig):
 class ProductionConfig(BaseConfig):
     """For production."""
 
-    AMBUDA_ENVIRONMENT = PRODUCTION
+    AMBUDA_ENVIRONMENT = Env.PRODUCTION
 
     #: Logger setup
     LOG_LEVEL = logging.INFO
@@ -249,11 +252,11 @@ def _validate_config(config: BaseConfig):
     :param config: the config to test
     """
     assert config.AMBUDA_ENVIRONMENT in {
-        TESTING,
-        DEVELOPMENT,
-        BUILD,
-        STAGING,
-        PRODUCTION,
+        Env.TESTING,
+        Env.DEVELOPMENT,
+        Env.BUILD,
+        Env.STAGING,
+        Env.PRODUCTION,
     }
 
     if not config.SQLALCHEMY_DATABASE_URI:
@@ -269,7 +272,7 @@ def _validate_config(config: BaseConfig):
         raise ValueError("This config does not define VIDYUT_DATA_DIR.")
 
     # Production-specific validation.
-    if config.AMBUDA_ENVIRONMENT == PRODUCTION:
+    if config.AMBUDA_ENVIRONMENT == Env.PRODUCTION:
         # All keys must be set.
         for key in dir(config):
             if key.isupper():
@@ -290,11 +293,11 @@ def _validate_config(config: BaseConfig):
 def load_config_object(name: str):
     """Load and validate an application config."""
     config_map = {
-        TESTING: UnitTestConfig,
-        DEVELOPMENT: DevelopmentConfig,
-        BUILD: BuildConfig,
-        STAGING: StagingConfig,
-        PRODUCTION: ProductionConfig,
+        Env.TESTING: UnitTestConfig,
+        Env.DEVELOPMENT: DevelopmentConfig,
+        Env.BUILD: BuildConfig,
+        Env.STAGING: StagingConfig,
+        Env.PRODUCTION: ProductionConfig,
     }
     config = config_map[name]
     _validate_config(config)

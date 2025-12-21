@@ -15,15 +15,18 @@
 
 <div class="prose">
 
-{% if text.supports_text_export %}
+{% if exports %}
 <h2>Downloads</h2>
 <ul>
-  <li><a href="{{ url_for('texts.downloads.download_xml', slug=text.slug) }}">XML</a></li>
-  <li><a href="{{ url_for('texts.downloads.download_plain_text', slug=text.slug) }}">Plain text</a></li>
-  <li><a href="{{ url_for('texts.downloads.download_pdf', slug=text.slug) }}">PDF (Devanagari)</a></li>
-  {% if text.has_parse_data %}
-  <li><a href="{{ url_for('texts.downloads.download_tokens', slug=text.slug) }}">Token data (CSV)</a></li>
-  {% endif %}
+  {% for export in exports %}
+  {% set label = export.export_config.label %}
+    {% if label %}
+    <li>
+      <a href="{{ url_for('texts.download_file', filename=export.slug) }}">{{ label }}</a>
+      {{ export.size|human_readable_bytes }}
+    </li>
+    {% endif %}
+  {% endfor %}
 </ul>
 {% endif %}
 

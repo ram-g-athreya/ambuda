@@ -2,7 +2,6 @@
 
 import json
 import os
-import tempfile
 
 from flask import (
     Blueprint,
@@ -12,7 +11,6 @@ from flask import (
     render_template,
     url_for,
     send_file,
-    after_this_request,
 )
 from vidyut.lipi import transliterate, Scheme
 
@@ -22,15 +20,17 @@ from ambuda.consts import TEXT_CATEGORIES
 from ambuda.models.texts import TextConfig
 from ambuda.utils import text_utils
 from ambuda.utils import text_exports
+from ambuda.utils.text_exports import ExportType, EXPORTS
 from ambuda.utils import xml
 from ambuda.utils.json_serde import AmbudaJSONEncoder
 from ambuda.utils.text_quality import validate
 from ambuda.views.api import bp as api
 from ambuda.views.reader.schema import Block, Section
+from ambuda.s3_utils import S3Path
+from flask import current_app
+from sqlalchemy import select
 
 bp = Blueprint("texts", __name__)
-downloads = Blueprint("downloads", __name__, url_prefix="/downloads")
-bp.register_blueprint(downloads)
 
 # A hacky list that decides which texts have parse data.
 HAS_NO_PARSE = {
@@ -154,8 +154,21 @@ def text_resources(slug):
     text = q.text(slug)
     if text is None:
         abort(404)
+    assert text
 
-    return render_template("texts/text-resources.html", text=text)
+    def _key_fn(x: db.TextExport) -> tuple:
+        if x.slug.endswith("txt"):
+            return (0, x.slug)
+        if x.slug.endswith("xml"):
+            return (1, x.slug)
+        if x.slug.endswith("pdf"):
+            return (2, x.slug)
+        if x.slug.endswith("csv"):
+            return (3, x.slug)
+        return (4, x.slug)
+
+    exports = sorted(text.exports, key=_key_fn)
+    return render_template("texts/text-resources.html", text=text, exports=exports)
 
 
 @bp.route("/<slug>/validate")
@@ -169,105 +182,38 @@ def validate_text(slug):
     return render_template("texts/text-validate.html", text=text, report=report)
 
 
-@downloads.route("/<slug>.txt")
-def download_plain_text(slug):
-    text = q.text(slug)
-    if text is None or not text.supports_text_export:
+@bp.route("/downloads/<filename>")
+def download_file(filename):
+    text_export = q.text_export(filename)
+    if not text_export:
         abort(404)
-    assert text
+    assert text_export
 
-    temp = tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt")
-    temp_path = temp.name
-    temp.close()
-    text_exports.create_text_file(text, temp_path)
-
-    @after_this_request
-    def remove_file(response):
-        try:
-            os.remove(temp_path)
-        except Exception as e:
-            pass
-        return response
-
-    return send_file(temp_path, as_attachment=True, download_name=f"{slug}.txt")
-
-
-@downloads.route("/<slug>.xml")
-def download_xml(slug):
-    text = q.text(slug)
-    if text is None or not text.supports_text_export:
+    export_config = text_export.export_config
+    if export_config is None:
         abort(404)
-    assert text
+    assert export_config
 
-    temp = tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".xml")
-    temp_path = temp.name
-    temp.close()
-    text_exports.create_xml_file(text, temp_path)
+    # Check cache first
+    cache = current_app.cache
+    cache_key = f"text_export:{filename}"
+    cached_path = cache.get(cache_key)
 
-    @after_this_request
-    def remove_file(response):
-        try:
-            os.remove(temp_path)
-        except Exception as e:
-            pass
-        return response
+    if cached_path and os.path.exists(cached_path):
+        file_path = cached_path
+    else:
+        s3_path = S3Path.from_path(text_export.s3_path)
+        cache_dir = current_app.config.get("CACHE_DIR", "/tmp/ambuda-cache")
+        os.makedirs(cache_dir, exist_ok=True)
 
-    return send_file(temp_path, as_attachment=True, download_name=f"{slug}.xml")
-
-
-@downloads.route("/<slug>-devanagari.pdf")
-def download_pdf(slug):
-    text = q.text(slug)
-    if text is None or not text.supports_text_export:
-        abort(404)
-    assert text
-
-    temp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
-    temp_path = temp.name
-    temp.close()
-    text_exports.create_pdf(text, temp_path)
-
-    @after_this_request
-    def remove_file(response):
-        try:
-            os.remove(temp_path)
-        except Exception as e:
-            pass
-        return response
+        file_path = os.path.join(cache_dir, filename)
+        s3_path.download_file(file_path)
+        cache.set(cache_key, file_path, timeout=0)
 
     return send_file(
-        temp_path,
-        mimetype="application/pdf",
-        as_attachment=False,
-        download_name=f"{slug}.pdf",
-    )
-
-
-@downloads.route("/<slug>-tokens.csv")
-def download_tokens(slug):
-    text = q.text(slug)
-    if text is None or not text.has_parse_data:
-        abort(404)
-    assert text
-
-    temp = tempfile.NamedTemporaryFile(suffix=".csv", delete=False)
-    temp_path = temp.name
-    temp.close()
-    text_exports.create_tokens(text, temp_path)
-
-    @after_this_request
-    def remove_file(response):
-        try:
-            os.remove(temp_path)
-        except Exception as e:
-            pass
-        return response
-
-    return send_file(
-        temp_path,
-        mimetype="text/csv",
-        as_attachment=False,
-        download_name=f"{slug}-tokens.csv",
+        file_path,
+        download_name=filename,
+        mimetype=export_config.mime_type,
     )
 
 
@@ -379,10 +325,12 @@ def block_htmx(text_slug, block_slug):
     text = q.text(text_slug)
     if text is None:
         abort(404)
+    assert text
 
     block = q.block(text.id, block_slug)
     if not block:
         abort(404)
+    assert block
 
     html_block = xml.transform_text_block(block.xml)
     return render_template(

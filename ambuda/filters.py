@@ -57,3 +57,18 @@ def time_ago(dt: datetime, now=None) -> str:
 def markdown(text: str) -> str:
     """Render the given Markdown text as HTML."""
     return MARKDOWN.render(text)
+
+
+def human_readable_bytes(bytes: int) -> str:
+    suffixes = ["B", "KiB", "MiB", "GiB"]
+
+    amount = bytes
+    index = 0
+    while amount >= 1024 and index + 1 < len(suffixes):
+        amount /= 1024
+        index += 1
+
+    if index == 0:
+        return f"{amount} {suffixes[index]}"
+    else:
+        return f"{amount:.1f} {suffixes[index]}"

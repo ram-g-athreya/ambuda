@@ -14,6 +14,11 @@ https://ambuda.readthedocs.io/en/latest/
 import os
 
 from celery import Celery
+from dotenv import load_dotenv
+
+# This may be done implicitly elsewhere, but load quickly so we're sure that
+# Flask and Celery has the same env.
+load_dotenv()
 
 # For context on why we use Redis for both the backend and the broker, see the
 # "Background tasks with Celery" doc.
@@ -26,6 +31,7 @@ app = Celery(
         "ambuda.tasks.projects",
         "ambuda.tasks.ocr",
         "ambuda.tasks.tagging",
+        "ambuda.tasks.text_exports",
     ],
 )
 app.conf.update(

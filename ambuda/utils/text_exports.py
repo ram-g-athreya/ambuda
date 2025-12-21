@@ -1,14 +1,18 @@
 """Utilities for exporting texts in various formats."""
 
 import csv
-from pathlib import Path
 import tempfile
+from enum import StrEnum
+from functools import cached_property
+from pathlib import Path
+from typing import Callable
 from xml.etree import ElementTree as ET
 
 import defusedxml.ElementTree as DET
 import requests
 import typst
 from flask import current_app
+from pydantic import BaseModel
 from vidyut.lipi import transliterate, Scheme
 
 import ambuda.database as db
@@ -22,12 +26,15 @@ EXPORT_DIR = Path(__file__).parent
 
 def font_directory() -> Path:
     """Get a path to our font files, loading from S3 if necessary."""
+    log = current_app.logger
+
     temp_dir = Path(tempfile.gettempdir())
     fonts_dir = temp_dir / "ambuda_fonts"
     fonts_dir.mkdir(parents=True, exist_ok=True)
 
     font_path = fonts_dir / "NotoSerifDevanagari.ttf"
     if font_path.exists():
+        log.info(f"Font path exists: {font_path}")
         return fonts_dir
 
     bucket = current_app.config["S3_BUCKET"]
@@ -36,9 +43,10 @@ def font_directory() -> Path:
         path = S3Path(
             bucket, "assets/fonts/NotoSerifDevanagari-VariableFont_wdth,wght.ttf"
         )
+        log.info(f"Downloading font from S3: {path.path}")
         path.download_file(font_path)
     except Exception as e:
-        print(f"Exception while downloading font: {e}")
+        log.error(f"Exception while downloading font: {e}")
     return fonts_dir
 
 
@@ -115,6 +123,8 @@ def create_xml_file(text: db.Text, file_path: str) -> None:
 
 
 def create_pdf(text: db.Text, file_path: str) -> None:
+    log = current_app.logger
+
     timestamp = utc_datetime_timestamp()
 
     buf = []
@@ -157,6 +167,8 @@ def create_pdf(text: db.Text, file_path: str) -> None:
             font_paths=font_paths,
             output=file_path,
         )
+        for warning in warnings:
+            log.info(f"Typst warning: {warning.message}")
 
 
 def create_tokens(text: db.Text, file_path: str) -> None:
@@ -195,3 +207,63 @@ def create_tokens(text: db.Text, file_path: str) -> None:
                 form, base, parse_data = fields
                 parse_data = parse_data.replace(",", " ")
                 writer.writerow([block_slug, form, base, parse_data])
+
+
+class ExportType(StrEnum):
+    PLAIN_TEXT = "plain-text"
+    XML = "xml"
+    PDF = "pdf"
+    TOKENS = "tokens"
+
+
+class ExportConfig(BaseModel):
+    label: str
+    type: ExportType
+    fn: Callable[[db.Text, str], None]
+    slug_pattern: str
+    mime_type: str
+
+    def slug(self, text: db.Text) -> str:
+        return self.slug_pattern.format(text.slug)
+
+    @cached_property
+    def suffix(self) -> str:
+        return self.slug_pattern.format("")
+
+    def matches(self, filename: str) -> bool:
+        return filename.endswith(self.suffix)
+
+    def write_to_local_file(self, text: db.Text, path: Path):
+        self.fn(text, str(path))
+
+
+EXPORTS = [
+    ExportConfig(
+        label="Plain text",
+        type=ExportType.PLAIN_TEXT,
+        slug_pattern="{}.txt",
+        mime_type="text/csv",
+        fn=create_text_file,
+    ),
+    ExportConfig(
+        label="XML",
+        type=ExportType.XML,
+        slug_pattern="{}.xml",
+        mime_type="text/plain",
+        fn=create_xml_file,
+    ),
+    ExportConfig(
+        label="PDF (Devanagari)",
+        type=ExportType.PDF,
+        slug_pattern="{}-devanagari.pdf",
+        mime_type="application/pdf",
+        fn=create_pdf,
+    ),
+    ExportConfig(
+        label="Token data (CSV)",
+        type=ExportType.TOKENS,
+        slug_pattern="{}.csv",
+        mime_type="text/csv",
+        fn=create_tokens,
+    ),
+]
