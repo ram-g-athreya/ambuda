@@ -17,6 +17,7 @@ env/
 node_modules/
 
 # Development database
+.s3_local/
 *.db
 
 # i18n files:

@@ -258,6 +258,13 @@ MODEL_CONFIG = [
         model=db.TextExport,
         list_columns=["id", "slug"],
         category=Category.TEXTS,
+        tasks=[
+            Task(
+                name="Delete selected exports",
+                slug="delete-exports",
+                handler=tasks.delete_exports,
+            ),
+        ],
     ),
     ModelConfig(
         model=db.Thread,

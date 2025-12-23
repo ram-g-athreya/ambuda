@@ -1,4 +1,5 @@
 import functools
+import os
 from pathlib import Path
 
 import boto3
@@ -6,7 +7,72 @@ import boto3
 
 @functools.cache
 def _get_client():
-    return boto3.client("s3")
+    client = boto3.client("s3")
+    if os.environ["FLASK_ENV"] != "production":
+        return LocalFSBotoClient()
+    else:
+        return client
+
+
+class LocalFSBotoClient:
+    """A development-only client that mocks out all S3 requests using the local filesystem."""
+
+    def __init__(self, base_path: Path | str | None = None):
+        if base_path is None:
+            base_path = Path.cwd() / ".s3_local"
+        self.base_path = Path(base_path)
+        self.base_path.mkdir(parents=True, exist_ok=True)
+
+    def _get_local_path(self, bucket: str, key: str) -> Path:
+        return self.base_path / bucket / key
+
+    def head_object(self, Bucket: str, Key: str, **kwargs):
+        local_path = self._get_local_path(Bucket, Key)
+        if not local_path.exists():
+            raise Exception(f"Object not found: {Bucket}/{Key}")
+        return {"ContentLength": local_path.stat().st_size}
+
+    def get_object(self, Bucket: str, Key: str, **kwargs):
+        local_path = self._get_local_path(Bucket, Key)
+        if not local_path.exists():
+            raise Exception(f"Object not found: {Bucket}/{Key}")
+
+        class Body:
+            def __init__(self, path):
+                self.path = path
+
+            def read(self):
+                return self.path.read_bytes()
+
+        return {"Body": Body(local_path)}
+
+    def put_object(self, Bucket: str, Key: str, Body: bytes, **kwargs):
+        local_path = self._get_local_path(Bucket, Key)
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        local_path.write_bytes(Body)
+        return {"ETag": "mock-etag"}
+
+    def upload_file(self, Filename: str | Path, Bucket: str, Key: str, **kwargs):
+        local_path = self._get_local_path(Bucket, Key)
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        source = Path(Filename)
+        if not source.exists():
+            raise Exception(f"Source file not found: {Filename}")
+        local_path.write_bytes(source.read_bytes())
+
+    def download_file(self, Bucket: str, Key: str, Filename: str | Path, **kwargs):
+        local_path = self._get_local_path(Bucket, Key)
+        if not local_path.exists():
+            raise Exception(f"Object not found: {Bucket}/{Key}")
+        dest = Path(Filename)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(local_path.read_bytes())
+
+    def delete_object(self, Bucket: str, Key: str, **kwargs):
+        local_path = self._get_local_path(Bucket, Key)
+        if local_path.exists():
+            local_path.unlink()
+        return {}
 
 
 class S3Path:
@@ -60,3 +126,6 @@ class S3Path:
 
     def download_file(self, local_path: str | Path):
         _get_client().download_file(self.bucket, self.key, local_path)
+
+    def delete(self):
+        _get_client().delete_object(Bucket=self.bucket, Key=self.key)

@@ -6,6 +6,7 @@ from enum import StrEnum
 from functools import cached_property
 from pathlib import Path
 from typing import Callable
+from lxml import etree
 from xml.etree import ElementTree as ET
 
 import defusedxml.ElementTree as DET
@@ -50,99 +51,112 @@ def font_directory() -> Path:
     return fonts_dir
 
 
-def create_text_file(text: db.Text, file_path: str) -> None:
+def create_xml_file(text: db.Text, file_path: str) -> None:
+    """Create a TEI XML file from the given path.
+
+    TEI XML is our canonical file export format from which all other exports are derived.
+    It contains structured text data and rich metadata.
+    """
+    with etree.xmlfile(file_path, encoding="utf-8") as xf:
+        xf.write_declaration()
+
+        with xf.element("TEI", xmlns="http://www.tei-c.org/ns/1.0"):
+            with xf.element("teiHeader"):
+                with xf.element("fileDesc"):
+                    with xf.element("title"):
+                        xf.write(text.title)
+                    with xf.element("author"):
+                        xf.write(text.author.name if text.author else "(missing)")
+
+                with xf.element("publicationStmt"):
+                    with xf.element("publisher"):
+                        xf.write("Ambuda (https://ambuda.org)")
+                    with xf.element("availability"):
+                        xf.write("TODO")
+
+                with xf.element("notesStmt"):
+                    with xf.element("note"):
+                        if text.project_id is not None:
+                            xf.write(
+                                "This text has been created by direct export from Ambuda's proofing system."
+                            )
+                        else:
+                            xf.write(
+                                "This text has been created by third-party import from another site."
+                            )
+
+                with xf.element("encodingDesc"):
+                    with xf.element("projectDesc"):
+                        with xf.element("p"):
+                            xf.write(
+                                "Ambuda is an online library of Sanskrit literature."
+                            )
+
+            # Main text
+            session = q.get_session()
+            with xf.element("text"):
+                with xf.element("body"):
+                    for section in text.sections:
+                        for block in section.blocks:
+                            el = etree.fromstring(block.xml)
+                            el.set("n", block.slug)
+                            xf.write(el)
+                        session.expire(section)
+
+
+def create_plain_text(text: db.Text, file_path: str) -> None:
     timestamp = utc_datetime_timestamp()
+
+    txt_path = Path(file_path)
+    xml_path = txt_path.parent / f"{text.slug}.xml"
+
+    if not xml_path.exists():
+        raise FileNotFoundError(
+            f"XML file not found at {xml_path}. "
+            "XML must be generated before plain text export."
+        )
 
     with open(file_path, "w") as f:
         f.write(f"# {text.title}\n")
         f.write(f"# Exported from ambuda.org on {timestamp}\n\n")
 
         is_first = True
-        for section in text.sections:
-            for block in section.blocks:
-                if not is_first:
-                    f.write("\n\n")
-                is_first = False
+        for event, elem in etree.iterparse(str(xml_path), events=("end",)):
+            parent = elem.getparent()
+            if parent is not None and parent.tag == "{http://www.tei-c.org/ns/1.0}body":
+                slug = elem.get("n")
+                if slug:
+                    if not is_first:
+                        f.write("\n\n")
+                    is_first = False
 
-                f.write(f"# {block.slug}\n")
-                xml = DET.fromstring(block.xml)
-                for el in xml.iter():
-                    if el.tag == "l":
-                        el.tail = "\n"
-                    el.tag = None
-                f.write(ET.tostring(xml, encoding="unicode").strip())
+                    f.write(f"# {slug}\n")
 
+                    elem_str = etree.tostring(elem, encoding="unicode")
+                    xml = ET.fromstring(elem_str)
+                    for el in xml.iter():
+                        if el.tag == "l":
+                            el.tail = "\n"
+                        el.tag = None
+                    f.write(ET.tostring(xml, encoding="unicode").strip())
 
-def create_xml_file(text: db.Text, file_path: str) -> None:
-    tei = ET.Element("TEI")
-    tei.attrib["xmlns"] = "http://www.tei-c.org/ns/1.0"
-
-    # Header
-    tei_header = ET.SubElement(tei, "teiHeader")
-    file_desc = ET.SubElement(tei_header, "fileDesc")
-    title = ET.SubElement(file_desc, "title")
-    title.text = text.title
-    author = ET.SubElement(file_desc, "author")
-    author.text = text.author.name if text.author else "(missing)"
-
-    publication_stmt = ET.SubElement(tei_header, "publicationStmt")
-    publisher = ET.SubElement(publication_stmt, "publisher")
-    publisher.text = "Ambuda (https://ambuda.org)"
-    availability = ET.SubElement(publication_stmt, "availability")
-    availability.text = "TODO"
-
-    notes_stmt = ET.SubElement(tei_header, "notesStmt")
-    if text.project_id is not None:
-        note = ET.SubElement(notes_stmt, "note")
-        note.text = (
-            "This text has been created by direct export from Ambuda's proofing system."
-        )
-    else:
-        note = ET.SubElement(notes_stmt, "note")
-        note.text = (
-            "This text has been created by third-party import from another site."
-        )
-
-    encoding_desc = ET.SubElement(tei_header, "encodingDesc")
-    project_desc = ET.SubElement(encoding_desc, "projectDesc")
-    project_desc_p = ET.SubElement(project_desc, "p")
-    project_desc_p.text = "Ambuda is an online library of Sanskrit literature."
-
-    # Main text
-    _text = ET.SubElement(tei, "text")
-    body = ET.SubElement(_text, "body")
-
-    for section in text.sections:
-        for block in section.blocks:
-            el = DET.fromstring(block.xml)
-            body.append(el)
-
-    tree = ET.ElementTree(tei)
-    ET.indent(tree, space="  ", level=0)
-    tree.write(file_path, xml_declaration=True, encoding="utf-8")
+                    elem.clear()
+                    while elem.getprevious() is not None:
+                        del elem.getparent()[0]
 
 
 def create_pdf(text: db.Text, file_path: str) -> None:
     log = current_app.logger
-
     timestamp = utc_datetime_timestamp()
 
-    buf = []
-    for section in text.sections:
-        for block in section.blocks:
-            buf.append(f'#text(size: 9pt, fill: rgb("#666666"))[{block.slug}]\n\n')
+    pdf_path = Path(file_path)
+    xml_path = pdf_path.parent / f"{text.slug}.xml"
 
-            xml_el = DET.fromstring(block.xml)
-            for el in xml_el.iter():
-                if el.tag == "l":
-                    el.tail = " \\\n" + (el.tail or "")
-                el.tag = None
-            content = ET.tostring(xml_el, encoding="unicode").strip()
-
-            buf.append(content)
-            buf.append("\n\n")
-
-    content = "".join(buf)
+    if not xml_path.exists():
+        raise FileNotFoundError(
+            f"XML file not found at {xml_path}. "
+            "XML must be generated before PDF export."
+        )
 
     template_path = Path(__file__).parent.parent / "templates/exports/document.typ"
     with open(template_path, "r") as f:
@@ -151,51 +165,73 @@ def create_pdf(text: db.Text, file_path: str) -> None:
     # Just in case
     text_title = transliterate(text.title, Scheme.HarvardKyoto, Scheme.Devanagari)
 
-    typst_content = template.format(
-        title=text_title, timestamp=timestamp, content=content
-    )
+    parts = template.split("{content}")
+    header = parts[0].format(title=text_title, timestamp=timestamp)
+    footer = parts[1] if len(parts) > 1 else ""
 
-    fonts_dir = Path(__file__).parent.parent / "static/fonts"
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".typ", delete=False
+    ) as typst_file:
+        temp_typst_path = typst_file.name
 
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".typ") as typst_file:
-        typst_file.write(typst_content)
-        typst_file_path = typst_file.name
+        typst_file.write(header)
 
+        for event, elem in etree.iterparse(str(xml_path), events=("end",)):
+            parent = elem.getparent()
+            if parent is not None and parent.tag == "{http://www.tei-c.org/ns/1.0}body":
+                slug = elem.get("n")
+                if slug is not None:
+                    typst_file.write(
+                        f'#text(size: 9pt, fill: rgb("#666666"))[{slug}]\n\n'
+                    )
+
+                    elem_str = etree.tostring(elem, encoding="unicode")
+                    elem_copy = ET.fromstring(elem_str)
+                    for el in elem_copy.iter():
+                        if el.tag == "l":
+                            el.tail = " \\\n" + (el.tail or "")
+                        el.tag = None
+                    content = ET.tostring(elem_copy, encoding="unicode").strip()
+
+                    # Escape Typst special characters
+                    content = content.replace("*", r"\*")
+
+                    typst_file.write("#sa[\n")
+                    typst_file.write(content)
+                    typst_file.write("\n]\n\n")
+
+                    elem.clear()
+                    while elem.getprevious() is not None:
+                        del elem.getparent()[0]
+
+        typst_file.write(footer)
+
+    try:
         font_paths = [font_directory()]
-        _, _warnings = typst.compile_with_warnings(
-            typst_file_path,
+        _, warnings = typst.compile_with_warnings(
+            temp_typst_path,
             font_paths=font_paths,
             output=file_path,
         )
         for warning in warnings:
             log.info(f"Typst warning: {warning.message}")
+            log.info(f"Typst trace: {warning.trace}")
+    finally:
+        if Path(temp_typst_path).exists():
+            Path(temp_typst_path).unlink()
 
 
 def create_tokens(text: db.Text, file_path: str) -> None:
     session = q.get_session()
-    tokens = (
-        session.query(db.Token)
-        .join(db.TextBlock)
-        .filter(db.TextBlock.text_id == text.id)
-        .order_by(db.Token.block_id, db.Token.order)
-        .all()
-    )
-
-    if tokens:
-        pass
-
-    buf = []
-    assert not tokens
 
     with open(file_path, "w") as f:
         writer = csv.writer(f, delimiter=",")
 
-        session = q.get_session()
         results = (
             session.query(db.BlockParse, db.TextBlock.slug)
             .join(db.TextBlock, db.BlockParse.block_id == db.TextBlock.id)
             .filter(db.BlockParse.text_id == text.id)
-            .all()
+            .yield_per(1000)
         )
 
         for block_parse, block_slug in results:
@@ -208,10 +244,12 @@ def create_tokens(text: db.Text, file_path: str) -> None:
                 parse_data = parse_data.replace(",", " ")
                 writer.writerow([block_slug, form, base, parse_data])
 
+            session.expire(block_parse)
+
 
 class ExportType(StrEnum):
-    PLAIN_TEXT = "plain-text"
     XML = "xml"
+    PLAIN_TEXT = "plain-text"
     PDF = "pdf"
     TOKENS = "tokens"
 
@@ -239,18 +277,18 @@ class ExportConfig(BaseModel):
 
 EXPORTS = [
     ExportConfig(
+        label="XML",
+        type=ExportType.XML,
+        slug_pattern="{}.xml",
+        mime_type="application/xml",
+        fn=create_xml_file,
+    ),
+    ExportConfig(
         label="Plain text",
         type=ExportType.PLAIN_TEXT,
         slug_pattern="{}.txt",
         mime_type="text/csv",
-        fn=create_text_file,
-    ),
-    ExportConfig(
-        label="XML",
-        type=ExportType.XML,
-        slug_pattern="{}.xml",
-        mime_type="text/plain",
-        fn=create_xml_file,
+        fn=create_plain_text,
     ),
     ExportConfig(
         label="PDF (Devanagari)",
@@ -262,7 +300,7 @@ EXPORTS = [
     ExportConfig(
         label="Token data (CSV)",
         type=ExportType.TOKENS,
-        slug_pattern="{}.csv",
+        slug_pattern="{}-tokens.csv",
         mime_type="text/csv",
         fn=create_tokens,
     ),

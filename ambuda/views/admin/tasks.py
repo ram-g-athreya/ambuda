@@ -25,7 +25,11 @@ import ambuda.database as db
 import ambuda.queries as q
 import ambuda.data_utils as data_utils
 from ambuda.utils.text_exports import ExportType
-from ambuda.tasks.text_exports import create_text_export
+from ambuda.tasks.text_exports import (
+    create_text_export,
+    delete_text_export,
+    create_all_exports_for_text,
+)
 from ambuda.utils.tei_parser import parse_document
 
 
@@ -591,28 +595,52 @@ def import_projects(model_name, selected_ids: list | None = None):
 
 
 def create_exports(model_name, selected_ids: list | None = None):
+    """Batch action to create all exports for selected texts."""
     if not selected_ids:
         flash("No texts selected", "error")
         return redirect(url_for("admin.list_model", model_name=model_name))
 
     session = q.get_session()
     app_environment = current_app.config["AMBUDA_ENVIRONMENT"]
-    task_count = 0
+
+    chain_count = 0
     for text_id in selected_ids:
         text = session.get(db.Text, int(text_id))
         if not text:
             continue
 
-        for export_type in ExportType:
-            create_text_export.delay(
-                text_id=text.id,
-                export_type=export_type,
-                app_environment=app_environment,
-            )
-            task_count += 1
+        export_chain = create_all_exports_for_text(
+            text_id=text.id,
+            app_environment=app_environment,
+        )
+        export_chain.apply_async()
+        chain_count += 1
+
+    flash(f"Started export for {chain_count} text(s).")
+    return redirect(url_for("admin.list_model", model_name=model_name))
+
+
+def delete_exports(model_name, selected_ids: list | None = None):
+    if not selected_ids:
+        flash("No exports selected", "error")
+        return redirect(url_for("admin.list_model", model_name=model_name))
+
+    session = q.get_session()
+    app_environment = current_app.config["AMBUDA_ENVIRONMENT"]
+    task_count = 0
+    for export_id in selected_ids:
+        text_export = session.get(db.TextExport, int(export_id))
+        if not text_export:
+            continue
+
+        delete_text_export.delay(
+            export_id=text_export.id,
+            app_environment=app_environment,
+        )
+        task_count += 1
 
     flash(
-        f"Started {task_count} export task(s) for {len(selected_ids)} text(s)",
+        f"Started {task_count} deletion task(s) for {len(selected_ids)} export(s)",
         "success",
     )
     return redirect(url_for("admin.list_model", model_name=model_name))
