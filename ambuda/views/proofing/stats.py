@@ -8,7 +8,7 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from indic_transliteration import detect, sanscript
+from vidyut.lipi import detect, transliterate, Scheme
 
 from ambuda.database import Project
 
@@ -18,14 +18,12 @@ RE_SPACE = re.compile(r"\s+", re.MULTILINE)
 RE_VOWEL = re.compile(r"[aAiIuUfFxXeEoO]")
 
 #: Scripts that don't use aksharas
-#: (copied from `indic_transliteration`)
 ROMAN_SCHEMES = {
-    "hk",
-    "iast",
-    "itrans",
-    "kolkata_v2",
-    "slp1",
-    "velthuis",
+    Scheme.HarvardKyoto,
+    Scheme.Iast,
+    Scheme.Itrans,
+    Scheme.Slp1,
+    Scheme.Velthuis,
 }
 
 
@@ -56,12 +54,12 @@ def _calculate_stats_for_strings(strings: Iterable[str]) -> Stats:
         spaces = RE_SPACE.findall(page_text)
         num_words += 1 + len(spaces)
 
-        encoding = detect.detect(page_text)
+        encoding = detect(page_text)
         if encoding in ROMAN_SCHEMES:
             num_space_chars = sum(len(x) for x in spaces)
             num_roman_characters += len(page_text) - num_space_chars
         else:
-            slp1_text = sanscript.transliterate(page_text, encoding, "slp1")
+            slp1_text = transliterate(page_text, encoding, Scheme.Slp1)
             num_aksharas += len(RE_VOWEL.findall(slp1_text))
 
     return Stats(

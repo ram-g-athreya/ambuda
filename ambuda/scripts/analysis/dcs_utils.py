@@ -8,7 +8,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 
 import conllu
-from indic_transliteration import sanscript
+from vidyut.lipi import transliterate, Scheme
 
 
 @dataclass
@@ -223,7 +223,7 @@ def is_multilemma(token) -> bool:
 
 
 def iast_to_slp1(s: str) -> str:
-    return sanscript.transliterate(s, sanscript.IAST, sanscript.SLP1)
+    return transliterate(s, Scheme.Iast, Scheme.Slp1)
 
 
 def parse_token(token) -> Token:

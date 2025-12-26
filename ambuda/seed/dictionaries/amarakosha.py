@@ -19,7 +19,7 @@ import re
 from collections.abc import Iterator
 
 import click
-from indic_transliteration import sanscript
+from vidyut.lipi import transliterate, Scheme
 
 from ambuda.seed.utils.cdsl_utils import create_from_scratch
 from ambuda.seed.utils.data_utils import create_db, fetch_text
@@ -51,7 +51,7 @@ def create_entries(deva_key: str, body: str) -> Iterator[tuple[str, str]]:
     assert deva_key == lex_key
 
     # Create a standardized lookup key.
-    key = sanscript.transliterate(deva_key, sanscript.DEVANAGARI, sanscript.SLP1)
+    key = transliterate(deva_key, Scheme.Devanagari, Scheme.Slp1)
     key = standardize_key(key)
 
     # The lexical data uses the danda to abbreviate the entry. Instead, use the

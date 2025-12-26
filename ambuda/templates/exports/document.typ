@@ -19,10 +19,12 @@
   #sa[#text(size: 20pt)[*{title}*]]
 ]
 
+#pagebreak()
+
 #align(center)[
   #text(size: 9pt, fill: rgb("#666666"))[Exported from ambuda.org on {timestamp}]
 ]
 
-#v(1em)
+#pagebreak()
 
 {content}

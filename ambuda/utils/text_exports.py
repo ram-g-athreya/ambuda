@@ -22,6 +22,97 @@ EXPORT_DIR = Path(__file__).parent
 logger = logging.getLogger(__name__)
 
 
+class ExportType(StrEnum):
+    #: TEI-conformant XML. This is our root export. That is, we use this export
+    #: to create downstream exports like PLAIN_TEX and PDF
+    XML = "xml"
+    PLAIN_TEXT = "plain-text"
+    PDF = "pdf"
+    TOKENS = "tokens"
+
+
+class ExportScheme(StrEnum):
+    DEVANAGARI = "Devanagari"
+    # KANNADA = "Kannada"
+    # GRANTHA = "Grantha"
+
+    @property
+    def title(self) -> str:
+        return self.value
+
+    @property
+    def slug(self) -> str:
+        """The file-readable name of this scheme (fol filenames, eg)."""
+        return self.value.lower()
+
+    @property
+    def scheme(self) -> Scheme:
+        """The transliteration settings associated with this script."""
+        map = {
+            ExportScheme.DEVANAGARI: Scheme.Devanagari,
+            # ExportScheme.KANNADA: Scheme.Kannada,
+            # ExportScheme.GRANTHA: Scheme.Grantha,
+        }
+        assert self.value in map
+        return map[self.value]
+
+
+class ExportConfig(BaseModel):
+    #: A human-readable label for this export, for UIs etc.
+    label: str
+    #: The type of export (PDF, plain text, etc.)
+    type: ExportType
+    #: The filename pattern for this export. Patterns must be unique across
+    #: export configs.
+    slug_pattern: str
+    #: The MIME type for this export.
+    mime_type: str
+    #: The output scheme for this export. If not set, use Devanagari.
+    scheme: ExportScheme | None = None
+
+    def slug(self, text: db.Text) -> str:
+        return self.slug_pattern.format(text.slug)
+
+    @cached_property
+    def suffix(self) -> str:
+        return self.slug_pattern.format("")
+
+    def matches(self, filename: str) -> bool:
+        return filename.endswith(self.suffix)
+
+
+EXPORTS = [
+    ExportConfig(
+        label="XML",
+        type=ExportType.XML,
+        slug_pattern="{}.xml",
+        mime_type="application/xml",
+    ),
+    ExportConfig(
+        label="Plain text",
+        type=ExportType.PLAIN_TEXT,
+        slug_pattern="{}.txt",
+        mime_type="text/csv",
+    ),
+    *[
+        ExportConfig(
+            label=f"PDF ({scheme.title})",
+            type=ExportType.PDF,
+            slug_pattern="{}" + f"-{scheme.slug}.pdf",
+            mime_type="application/pdf",
+            scheme=scheme,
+        )
+        for scheme in ExportScheme
+    ],
+    ExportConfig(
+        label="Token data (CSV)",
+        type=ExportType.TOKENS,
+        slug_pattern="{}-tokens.csv",
+        mime_type="text/csv",
+    ),
+]
+
+
 def font_directory(s3_bucket: str) -> Path:
     """Get a path to our font files, loading from S3 if necessary.
 
@@ -118,38 +209,41 @@ def create_plain_text(text: db.Text, file_path: Path, xml_path: Path) -> None:
         f.write(f"# Exported from ambuda.org on {timestamp}\n\n")
 
         is_first = True
+        ns = "{http://www.tei-c.org/ns/1.0}"
         for event, elem in etree.iterparse(str(xml_path), events=("end",)):
             parent = elem.getparent()
-            if parent is not None and parent.tag == "{http://www.tei-c.org/ns/1.0}body":
+            if parent is not None and parent.tag == f"{ns}body":
                 slug = elem.get("n")
-                if slug:
-                    if not is_first:
-                        f.write("\n\n")
-                    is_first = False
+                if not slug:
+                    continue
 
-                    f.write(f"# {slug}\n")
+                if not is_first:
+                    f.write("\n\n")
+                is_first = False
 
-                    elem_str = etree.tostring(elem, encoding="unicode")
-                    xml = ET.fromstring(elem_str)
-                    for el in xml.iter():
-                        if el.tag == "l":
-                            el.tail = "\n"
-                        el.tag = None
-                    f.write(ET.tostring(xml, encoding="unicode").strip())
+                f.write(f"# {slug}\n")
 
-                    elem.clear()
-                    while elem.getprevious() is not None:
-                        del elem.getparent()[0]
+                elem_str = etree.tostring(elem, encoding="unicode")
+                xml = ET.fromstring(elem_str)
+                for el in xml.iter():
+                    if el.tag == "l":
+                        el.tail = "\n"
+                    el.tag = None
+                f.write(ET.tostring(xml, encoding="unicode").strip())
+
+                elem.clear()
+                while elem.getprevious() is not None:
+                    del elem.getparent()[0]
 
 
-def create_pdf(text: db.Text, file_path: Path, s3_bucket: str, xml_path: Path) -> None:
-    """Create a PDF file from the given text.
-
-    :param text: the text to export
-    :param file_path: where to write the PDF
-    :param s3_bucket: the S3 bucket name (needed for font downloads)
-    :param xml_path: explicit path to XML file, if None will guess based on file_path
-    """
+def create_pdf(
+    text: db.Text,
+    file_path: Path,
+    s3_bucket: str,
+    xml_path: Path,
+    export_scheme: ExportScheme,
+) -> None:
+    """Create a PDF file from the given text."""
     import typst
 
     timestamp = utc_datetime_timestamp()
@@ -166,6 +260,8 @@ def create_pdf(text: db.Text, file_path: Path, s3_bucket: str, xml_path: Path) -
 
     # Just in case
     text_title = transliterate(text.title, Scheme.HarvardKyoto, Scheme.Devanagari)
+    # Now, transliterate to output scheme.
+    text_title = transliterate(text_title, Scheme.Devanagari, export_scheme.scheme)
 
     parts = template.split("{content}")
     header = parts[0].format(title=text_title, timestamp=timestamp)
@@ -178,33 +274,39 @@ def create_pdf(text: db.Text, file_path: Path, s3_bucket: str, xml_path: Path) -
 
         typst_file.write(header)
 
+        ns = "{http://www.tei-c.org/ns/1.0}"
         for event, elem in etree.iterparse(str(xml_path), events=("end",)):
             parent = elem.getparent()
-            if parent is not None and parent.tag == "{http://www.tei-c.org/ns/1.0}body":
+            if parent is not None and parent.tag == f"{ns}body":
                 slug = elem.get("n")
-                if slug is not None:
-                    typst_file.write(
-                        f'#text(size: 9pt, fill: rgb("#666666"))[{slug}]\n\n'
-                    )
+                if slug is None:
+                    continue
 
-                    elem_str = etree.tostring(elem, encoding="unicode")
-                    elem_copy = ET.fromstring(elem_str)
-                    for el in elem_copy.iter():
-                        if el.tag == "l":
-                            el.tail = " \\\n" + (el.tail or "")
-                        el.tag = None
-                    content = ET.tostring(elem_copy, encoding="unicode").strip()
+                typst_file.write(f'#text(size: 9pt, fill: rgb("#666666"))[{slug}]\n\n')
 
-                    # Escape Typst special characters
-                    content = content.replace("*", r"\*")
+                elem_str = etree.tostring(elem, encoding="unicode")
+                xml = ET.fromstring(elem_str)
+                for el in xml.iter():
+                    if el.tag == f"{ns}l":
+                        # In typst, create a new line with `\`.
+                        # (Escaped with pretty print is `\\\n`)
+                        el.tail = " \\\n" + (el.tail or "")
+                    el.tag = None
+                content = ET.tostring(xml, encoding="unicode").strip()
 
-                    typst_file.write("#sa[\n")
-                    typst_file.write(content)
-                    typst_file.write("\n]\n\n")
+                # Escape Typst special characters
+                content = content.replace("*", r"\*")
+                content = transliterate(
+                    content, Scheme.Devanagari, export_scheme.scheme
+                )
 
-                    elem.clear()
-                    while elem.getprevious() is not None:
-                        del elem.getparent()[0]
+                typst_file.write("#sa[\n")
+                typst_file.write(content)
+                typst_file.write("\n]\n\n")
+
+                elem.clear()
+                while elem.getprevious() is not None:
+                    del elem.getparent()[0]
 
         typst_file.write(footer)
 
@@ -253,55 +355,3 @@ def maybe_create_tokens(text: db.Text, out_path: Path) -> None:
 
     if not has_data:
         out_path.unlink()
-
-
-class ExportType(StrEnum):
-    XML = "xml"
-    PLAIN_TEXT = "plain-text"
-    PDF = "pdf"
-    TOKENS = "tokens"
-
-
-class ExportConfig(BaseModel):
-    label: str
-    type: ExportType
-    slug_pattern: str
-    mime_type: str
-
-    def slug(self, text: db.Text) -> str:
-        return self.slug_pattern.format(text.slug)
-
-    @cached_property
-    def suffix(self) -> str:
-        return self.slug_pattern.format("")
-
-    def matches(self, filename: str) -> bool:
-        return filename.endswith(self.suffix)
-
-
-EXPORTS = [
-    ExportConfig(
-        label="XML",
-        type=ExportType.XML,
-        slug_pattern="{}.xml",
-        mime_type="application/xml",
-    ),
-    ExportConfig(
-        label="Plain text",
-        type=ExportType.PLAIN_TEXT,
-        slug_pattern="{}.txt",
-        mime_type="text/csv",
-    ),
-    ExportConfig(
-        label="PDF (Devanagari)",
-        type=ExportType.PDF,
-        slug_pattern="{}-devanagari.pdf",
-        mime_type="application/pdf",
-    ),
-    ExportConfig(
-        label="Token data (CSV)",
-        type=ExportType.TOKENS,
-        slug_pattern="{}-tokens.csv",
-        mime_type="text/csv",
-    ),
-]

@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-from indic_transliteration import sanscript
+from vidyut.lipi import transliterate, Scheme
 
 #: Most texts have multiple sections and use section slugs like "1", "2", etc.
 #: If a text has just one section, we create a single "default" section with
@@ -110,12 +110,11 @@ def _delete_unused_elements(xml: ET.Element):
 
 def _to_devanagari(xml: ET.Element):
     """Transliterate inline elements to Devanagari."""
-    t = sanscript.transliterate
     for el in xml.iter("*"):
         if el.text:
-            el.text = t(el.text, sanscript.IAST, sanscript.DEVANAGARI)
+            el.text = transliterate(el.text, Scheme.Iast, Scheme.Devanagari)
         if el.tail:
-            el.tail = t(el.tail, sanscript.IAST, sanscript.DEVANAGARI)
+            el.tail = transliterate(el.tail, Scheme.Iast, Scheme.Devanagari)
 
 
 def _validate_section(section: Section):

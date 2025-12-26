@@ -26,7 +26,6 @@ import ambuda.queries as q
 import ambuda.data_utils as data_utils
 from ambuda.utils.text_exports import ExportType
 from ambuda.tasks.text_exports import (
-    create_text_export,
     delete_text_export,
     create_all_exports_for_text,
 )
@@ -616,7 +615,7 @@ def create_exports(model_name, selected_ids: list | None = None):
         export_chain.apply_async()
         chain_count += 1
 
-    flash(f"Started export for {chain_count} text(s).")
+    flash(f"Started export for {chain_count} text(s).", "success")
     return redirect(url_for("admin.list_model", model_name=model_name))
 
 

@@ -1,5 +1,6 @@
 import os
 
+import sqlalchemy as sqla
 from flask import (
     Blueprint,
     abort,
@@ -12,7 +13,7 @@ from flask import (
 )
 from flask_login import login_required, current_user
 from pydantic import BaseModel
-import sqlalchemy as sqla
+from vidyut.lipi import transliterate, Scheme
 
 import ambuda.queries as q
 from ambuda import database as db
@@ -55,7 +56,11 @@ class ParseDataRequest(BaseModel):
 def index():
     """All published texts."""
     texts = q.texts()
-    return render_template("proofing/tagging/index.html", texts=texts)
+    sorted_texts = sorted(
+        texts,
+        key=lambda x: transliterate(x.title, Scheme.HarvardKyoto, Scheme.Devanagari),
+    )
+    return render_template("proofing/tagging/index.html", texts=sorted_texts)
 
 
 @bp.route("/<slug>/")

@@ -21,7 +21,7 @@ import re
 from collections.abc import Iterator
 
 import click
-from indic_transliteration import sanscript
+from vidyut.lipi import transliterate, Scheme
 
 from ambuda.seed.utils.cdsl_utils import create_from_scratch
 from ambuda.seed.utils.data_utils import create_db, fetch_text
@@ -54,7 +54,7 @@ def sak_generator(dict_blob: str):
 
         line = line.strip()
         if line:
-            line = sanscript.transliterate(line, sanscript.DEVANAGARI, sanscript.SLP1)
+            line = transliterate(line, Scheme.Devanagari, Scheme.Slp1)
             # Standardize on CDSL conventions, mostly
             line = line.replace("<br>", "<lb/>")
             buf.append(line)

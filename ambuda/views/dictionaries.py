@@ -14,7 +14,7 @@ If a source list is invalid, we raise a 404 error.
 import functools
 
 from flask import Blueprint, abort, redirect, render_template, request, url_for
-from indic_transliteration import detect, sanscript
+from vidyut.lipi import detect, transliterate, Scheme
 
 import ambuda.queries as q
 from ambuda.utils import xml
@@ -31,8 +31,8 @@ def _get_dictionary_data() -> dict[str, str]:
 
 def _create_query_keys(sources: list[str], query: str) -> list[str]:
     query = query.strip()
-    input_scheme = detect.detect(query)
-    slp1_key = sanscript.transliterate(query, input_scheme, sanscript.SLP1)
+    input_scheme = detect(query)
+    slp1_key = transliterate(query, input_scheme, Scheme.Slp1)
 
     slp1_key = standardize_key(slp1_key)
     keys = [slp1_key]

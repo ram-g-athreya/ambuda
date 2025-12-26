@@ -1,0 +1,59 @@
+{% extends 'base-text.html' %}
+{% import "macros/components.html" as m %}
+
+
+{% block title %}{{ m.title(_('Downloads')) }}{% endblock %}
+
+
+{% block main %}
+<div class="prose max-w-3xl mx-auto md:my-24 md:mb-36">
+  <h1>Downloads</h1>
+
+  <p>All available text exports across the library.</p>
+
+  {% if exports %}
+  <div class="not-prose overflow-x-auto">
+    <table class="min-w-full divide-y divide-gray-200">
+      <thead class="bg-gray-50">
+        <tr>
+          <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            Slug
+          </th>
+          <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            File Type
+          </th>
+          <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            Size
+          </th>
+          <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            Updated
+          </th>
+        </tr>
+      </thead>
+      <tbody class="bg-white divide-y divide-gray-200">
+        {% for export in exports %}
+        <tr>
+          <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+            <a href="{{ url_for('texts.download_file', filename=export.slug) }}" class="text-blue-600 hover:text-blue-800">
+              {{ export.slug }}
+            </a>
+          </td>
+          <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+            {{ export.export_type }}
+          </td>
+          <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+            {{ export.size|human_readable_bytes }}
+          </td>
+          <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+            {{ export.updated_at.strftime('%Y-%m-%d') }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p>No downloads available.</p>
+  {% endif %}
+</div>
+{% endblock %}

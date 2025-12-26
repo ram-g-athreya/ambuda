@@ -182,6 +182,16 @@ def validate_text(slug):
     return render_template("texts/text-validate.html", text=text, report=report)
 
 
+@bp.route("/downloads/")
+def downloads():
+    """Show all available downloads."""
+    with q.get_session() as session:
+        stmt = select(db.TextExport).order_by(db.TextExport.slug)
+        exports = list(session.execute(stmt).scalars())
+
+    return render_template("texts/downloads.html", exports=exports)
+
+
 @bp.route("/downloads/<filename>")
 def download_file(filename):
     text_export = q.text_export(filename)

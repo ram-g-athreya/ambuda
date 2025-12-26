@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from dotenv import load_dotenv
-from indic_transliteration import sanscript
+from vidyut.lipi import transliterate, Scheme
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -86,9 +86,7 @@ def get_verse_xml(verse, xml_id) -> str:
     for i, line in enumerate(verse.lines):
         is_last = i == len(verse.lines) - 1
         if is_last:
-            num = sanscript.transliterate(
-                str(line.verse), sanscript.HK, sanscript.DEVANAGARI
-            )
+            num = transliterate(str(line.verse), Scheme.HarvardKyoto, Scheme.Devanagari)
             # Double danda
             buf.append(f"<l>{line.text} \u0965 {num} \u0965</l>")
         else:

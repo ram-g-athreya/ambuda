@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import tempfile
 from datetime import UTC, datetime
@@ -20,11 +21,11 @@ from ambuda.utils.text_exports import (
 from pydantic import BaseModel
 
 
-EXPORTS = {x.type: x for x in text_exports.EXPORTS}
+EXPORTS = {x.slug_pattern: x for x in text_exports.EXPORTS}
 
 
 def create_text_export_inner(
-    text_id: int, export_type: str, app_environment: str, engine=None
+    text_id: int, export_key: str, app_environment: str, engine=None
 ) -> None:
     """NOTE: `engine` is exposed for testing"""
     with get_db_session(app_environment, engine=engine) as (session, q, config_obj):
@@ -32,11 +33,11 @@ def create_text_export_inner(
         if not text:
             raise ValueError(f"Text with id {text_id} not found")
 
-        logging.info(f"Creating {export_type} export for {text.slug}")
+        logging.info(f"Creating {export_key} export for {text.slug}")
 
-        export_config = EXPORTS.get(export_type)
+        export_config = EXPORTS.get(export_key)
         if not export_config:
-            raise ValueError(f"Unknown export type: {export_type}")
+            raise ValueError(f"Unknown export type: {export_key}")
 
         needs_xml = export_config.type in (ExportType.PLAIN_TEXT, ExportType.PDF)
 
@@ -78,39 +79,57 @@ def create_text_export_inner(
                 create_plain_text(text, output_path, xml_path)
             elif export_config.type == ExportType.PDF:
                 assert xml_path
-                create_pdf(text, output_path, config_obj.S3_BUCKET, xml_path)
+                assert export_config.scheme
+                create_pdf(
+                    text,
+                    output_path,
+                    config_obj.S3_BUCKET,
+                    xml_path,
+                    export_config.scheme,
+                )
             elif export_config.type == ExportType.TOKENS:
                 maybe_create_tokens(text, output_path)
             else:
-                raise ValueError(f"Unknown export type: {export_type}")
+                raise ValueError(f"Unknown export type: {export_key}")
 
             if not output_path.exists():
                 logging.info(f"Did not create {output_path} (no data found)")
                 return
 
             file_size = output_path.stat().st_size
+
+            sha256_hash = hashlib.sha256()
+            with open(output_path, "rb") as f:
+                for byte_block in iter(lambda: f.read(4096), b""):
+                    sha256_hash.update(byte_block)
+            checksum = sha256_hash.hexdigest()
+
             export_slug = export_config.slug(text)
-            logging.info(f"Created {export_type} export at {output_path}")
+            logging.info(
+                f"Created {export_key} export at {output_path} (SHA256: {checksum})"
+            )
 
             bucket = config_obj.S3_BUCKET
             key = f"text-exports/{export_slug}"
             s3_path = S3Path(bucket, key)
             s3_path.upload_file(output_path)
-            logging.info(f"Uploaded {export_type} export to {s3_path}")
+            logging.info(f"Uploaded {export_key} export to {s3_path}")
 
             text_export = q.text_export(export_slug)
             if text_export:
                 text_export.s3_path = s3_path.path
                 text_export.size = file_size
+                text_export.sha256_checksum = checksum
                 text_export.updated_at = datetime.now(UTC)
                 logging.info(f"Updated existing TextExport: {export_slug}")
             else:
                 text_export = db.TextExport(
                     text_id=text_id,
                     slug=export_slug,
-                    export_type=export_type,
+                    export_type=export_config.type,
                     s3_path=s3_path.path,
                     size=file_size,
+                    sha256_checksum=checksum,
                 )
                 session.add(text_export)
                 logging.info(f"Created new TextExport: {export_slug}")
@@ -118,8 +137,8 @@ def create_text_export_inner(
 
 
 @app.task(bind=True)
-def create_text_export(self, text_id: int, export_type: str, app_environment: str):
-    create_text_export_inner(text_id, export_type, app_environment)
+def create_text_export(self, text_id: int, export_key: str, app_environment: str):
+    create_text_export_inner(text_id, export_key, app_environment)
 
 
 def delete_text_export_inner(export_id: int, app_environment: str, engine=None):
@@ -152,37 +171,20 @@ def delete_text_export(self, export_id: int, app_environment: str):
     delete_text_export_inner(export_id, app_environment)
 
 
-# Specialized tasks for Celery chains
+def create_all_exports_for_text(text_id: int, app_environment: str):
+    xml_exports = [e for e in text_exports.EXPORTS if e.type == ExportType.XML]
+    other_exports = [e for e in text_exports.EXPORTS if e.type != ExportType.XML]
 
-
-@app.task(bind=True)
-def create_xml_export(self, text_id: int, app_environment: str):
-    create_text_export_inner(text_id, text_exports.ExportType.XML, app_environment)
-
-
-@app.task(bind=True)
-def create_txt_export(self, text_id: int, app_environment: str):
-    create_text_export_inner(
-        text_id, text_exports.ExportType.PLAIN_TEXT, app_environment
+    xml_task = create_text_export.si(
+        text_id, xml_exports[0].slug_pattern, app_environment
     )
 
+    other_tasks = [
+        create_text_export.si(text_id, e.slug_pattern, app_environment)
+        for e in other_exports
+    ]
 
-@app.task(bind=True)
-def create_pdf_export(self, text_id: int, app_environment: str):
-    create_text_export_inner(text_id, text_exports.ExportType.PDF, app_environment)
-
-
-@app.task(bind=True)
-def create_tokens_export(self, text_id: int, app_environment: str):
-    create_text_export_inner(text_id, text_exports.ExportType.TOKENS, app_environment)
-
-
-def create_all_exports_for_text(text_id: int, app_environment: str):
     return chain(
-        create_xml_export.si(text_id, app_environment),
-        group(
-            create_txt_export.si(text_id, app_environment),
-            create_pdf_export.si(text_id, app_environment),
-            create_tokens_export.si(text_id, app_environment),
-        ),
+        xml_task,
+        group(*other_tasks),
     )

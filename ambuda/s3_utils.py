@@ -14,14 +14,19 @@ def _get_client():
         return client
 
 
+def _log(msg):
+    print(msg)
+
+
 class LocalFSBotoClient:
     """A development-only client that mocks out all S3 requests using the local filesystem."""
 
     def __init__(self, base_path: Path | str | None = None):
         if base_path is None:
-            base_path = Path.cwd() / ".s3_local"
+            base_path = Path(__file__).parent.parent / "data" / "s3_local"
         self.base_path = Path(base_path)
         self.base_path.mkdir(parents=True, exist_ok=True)
+        _log(f"Using local s3 at base path {base_path}")
 
     def _get_local_path(self, bucket: str, key: str) -> Path:
         return self.base_path / bucket / key
@@ -50,6 +55,8 @@ class LocalFSBotoClient:
         local_path = self._get_local_path(Bucket, Key)
         local_path.parent.mkdir(parents=True, exist_ok=True)
         local_path.write_bytes(Body)
+        _log(f"put_object to {local_path}")
+
         return {"ETag": "mock-etag"}
 
     def upload_file(self, Filename: str | Path, Bucket: str, Key: str, **kwargs):
@@ -59,6 +66,7 @@ class LocalFSBotoClient:
         if not source.exists():
             raise Exception(f"Source file not found: {Filename}")
         local_path.write_bytes(source.read_bytes())
+        _log(f"upload_file to {local_path}")
 
     def download_file(self, Bucket: str, Key: str, Filename: str | Path, **kwargs):
         local_path = self._get_local_path(Bucket, Key)
@@ -67,6 +75,7 @@ class LocalFSBotoClient:
         dest = Path(Filename)
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(local_path.read_bytes())
+        _log(f"download_file to {local_path}")
 
     def delete_object(self, Bucket: str, Key: str, **kwargs):
         local_path = self._get_local_path(Bucket, Key)

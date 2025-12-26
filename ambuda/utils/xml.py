@@ -30,7 +30,7 @@ from typing import NewType
 from xml.etree import ElementTree as ET
 
 import defusedxml.ElementTree as DET
-from indic_transliteration import sanscript
+from vidyut.lipi import transliterate, Scheme
 
 Attributes = NewType("Attributes", dict[str, str])
 
@@ -103,15 +103,14 @@ def text(before="", after="") -> Rule:
 
 def sanskrit_text(xml: ET.Element):
     """Transliterate inline elements in-place."""
-    t = sanscript.transliterate
     xml.tag = "span"
     xml.attrib = {"lang": "sa"}
     for el in xml.iter("*"):
         if el.text:
-            el.text = t(el.text, sanscript.SLP1, sanscript.DEVANAGARI)
+            el.text = transliterate(el.text, Scheme.Slp1, Scheme.Devanagari)
         # Ignore xml.tail
         if el.tail and el is not xml:
-            el.tail = t(el.tail, sanscript.SLP1, sanscript.DEVANAGARI)
+            el.tail = transliterate(el.tail, Scheme.Slp1, Scheme.Devanagari)
 
 
 #: Wrap in parentheses.

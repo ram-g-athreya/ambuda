@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 
 import getpass
+import os
 from pathlib import Path
 
 import click
+from dotenv import load_dotenv
 from slugify import slugify
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -16,7 +18,13 @@ from ambuda.tasks.projects import (
     create_project_inner,
     move_project_pdf_to_s3_inner,
 )
+from ambuda.tasks.text_exports import create_text_export_inner
+from ambuda.utils import text_exports
+from ambuda.utils.text_exports import ExportType
 from ambuda.tasks.utils import LocalTaskStatus
+
+# Load environment variables from .env file
+load_dotenv()
 
 engine = create_db()
 
@@ -113,29 +121,41 @@ def create_project(title, pdf_path):
 
 
 @cli.command()
-def migrate_projects():
-    """Migrate all project PDFs to S3 storage."""
-    current_app = ambuda.create_app("development")
-    with current_app.app_context():
-        projects = q.projects()
-        for project in projects:
-            print(f"Project: {project.slug}")
-            slug = project.slug
-            pdf_path = (
-                Path(current_app.config["UPLOAD_FOLDER"])
-                / "projects"
-                / slug
-                / "pdf"
-                / "source.pdf"
-            )
-            try:
-                move_project_pdf_to_s3_inner(
-                    project_slug=slug,
-                    pdf_path=pdf_path,
-                    app_environment=current_app.config["AMBUDA_ENVIRONMENT"],
-                )
-            except Exception as e:
-                print(f"Exception: {e}")
+@click.option("--text-slug", help="slug of the text to export")
+def export_text(text_slug):
+    """Create all exports for a text."""
+    with Session(engine) as session:
+        stmt = select(db.Text).where(db.Text.slug == text_slug)
+        text = session.scalars(stmt).first()
+        if text is None:
+            raise click.ClickException(f'Text with slug "{text_slug}" does not exist.')
+
+        text_id = text.id
+
+    app_environment = os.getenv("FLASK_ENV")
+    if not app_environment:
+        raise click.ClickException("FLASK_ENV not found in .env file")
+
+    click.echo(
+        f'Creating all exports for text "{text_slug}" (id={text_id}) in {app_environment} environment...'
+    )
+
+    xml_exports = [e for e in text_exports.EXPORTS if e.type == ExportType.XML]
+    other_exports = [e for e in text_exports.EXPORTS if e.type != ExportType.XML]
+
+    for export_config in xml_exports:
+        click.echo(f"Creating {export_config.label} export...")
+        create_text_export_inner(
+            text_id, export_config.slug_pattern, app_environment, engine=engine
+        )
+
+    for export_config in other_exports:
+        click.echo(f"Creating {export_config.label} export...")
+        create_text_export_inner(
+            text_id, export_config.slug_pattern, app_environment, engine=engine
+        )
+
+    click.echo("All exports completed successfully.")
 
 
 if __name__ == "__main__":

@@ -52,7 +52,7 @@ def test_create_xml_export_inner(flask_app, s3_mocks):
 
         text_exports.create_text_export_inner(
             text_id=text.id,
-            export_type=ExportType.XML,
+            export_key="{}.xml",
             app_environment=flask_app.config["AMBUDA_ENVIRONMENT"],
             engine=engine,
         )
@@ -63,6 +63,7 @@ def test_create_xml_export_inner(flask_app, s3_mocks):
         assert export.export_type == ExportType.XML
         assert export.s3_path is not None
         assert export.size > 0
+        assert len(export.sha256_checksum) == 64
 
 
 def test_create_plain_text_export_inner(flask_app, s3_mocks):
@@ -75,14 +76,14 @@ def test_create_plain_text_export_inner(flask_app, s3_mocks):
 
         text_exports.create_text_export_inner(
             text_id=text.id,
-            export_type=ExportType.XML,
+            export_key="{}.xml",
             app_environment=flask_app.config["AMBUDA_ENVIRONMENT"],
             engine=engine,
         )
 
         text_exports.create_text_export_inner(
             text_id=text.id,
-            export_type=ExportType.PLAIN_TEXT,
+            export_key="{}.txt",
             app_environment=flask_app.config["AMBUDA_ENVIRONMENT"],
             engine=engine,
         )
@@ -93,6 +94,8 @@ def test_create_plain_text_export_inner(flask_app, s3_mocks):
         assert export.export_type == ExportType.PLAIN_TEXT
         assert export.s3_path is not None
         assert export.size > 0
+        assert export.sha256_checksum is not None
+        assert len(export.sha256_checksum) == 64
 
 
 def test_create_pdf_export_inner(flask_app, s3_mocks):
@@ -105,14 +108,14 @@ def test_create_pdf_export_inner(flask_app, s3_mocks):
 
         text_exports.create_text_export_inner(
             text_id=text.id,
-            export_type=ExportType.XML,
+            export_key="{}.xml",
             app_environment=flask_app.config["AMBUDA_ENVIRONMENT"],
             engine=engine,
         )
 
         text_exports.create_text_export_inner(
             text_id=text.id,
-            export_type=ExportType.PDF,
+            export_key="{}-devanagari.pdf",
             app_environment=flask_app.config["AMBUDA_ENVIRONMENT"],
             engine=engine,
         )
@@ -123,6 +126,8 @@ def test_create_pdf_export_inner(flask_app, s3_mocks):
         assert export.export_type == ExportType.PDF
         assert export.s3_path is not None
         assert export.size > 0
+        assert export.sha256_checksum is not None
+        assert len(export.sha256_checksum) == 64
 
 
 def test_create_tokens_export_inner(flask_app, s3_mocks):
@@ -145,7 +150,7 @@ def test_create_tokens_export_inner(flask_app, s3_mocks):
 
         text_exports.create_text_export_inner(
             text_id=text.id,
-            export_type=ExportType.TOKENS,
+            export_key="{}-tokens.csv",
             app_environment=flask_app.config["AMBUDA_ENVIRONMENT"],
             engine=engine,
         )
@@ -156,6 +161,8 @@ def test_create_tokens_export_inner(flask_app, s3_mocks):
         assert export.export_type == ExportType.TOKENS
         assert export.s3_path is not None
         assert export.size > 0
+        assert export.sha256_checksum is not None
+        assert len(export.sha256_checksum) == 64
 
 
 def test_create_export_without_xml_fails(flask_app, s3_mocks):
@@ -169,7 +176,7 @@ def test_create_export_without_xml_fails(flask_app, s3_mocks):
         with pytest.raises(FileNotFoundError):
             text_exports.create_text_export_inner(
                 text_id=text.id,
-                export_type=ExportType.PLAIN_TEXT,
+                export_key="{}.txt",
                 app_environment=flask_app.config["AMBUDA_ENVIRONMENT"],
                 engine=engine,
             )
@@ -181,7 +188,7 @@ def test_create_export_with_invalid_text_id(flask_app, s3_mocks):
         with pytest.raises(ValueError, match="Text with id 99999 not found"):
             text_exports.create_text_export_inner(
                 text_id=99999,
-                export_type=ExportType.XML,
+                export_key="{}.xml",
                 app_environment=flask_app.config["AMBUDA_ENVIRONMENT"],
                 engine=engine,
             )
@@ -198,7 +205,7 @@ def test_create_export_with_invalid_export_type(flask_app, s3_mocks):
         with pytest.raises(ValueError, match="Unknown export type"):
             text_exports.create_text_export_inner(
                 text_id=text.id,
-                export_type="invalid-type",
+                export_key="invalid-key",
                 app_environment=flask_app.config["AMBUDA_ENVIRONMENT"],
                 engine=engine,
             )
@@ -214,7 +221,7 @@ def test_update_existing_export(flask_app, s3_mocks):
 
         text_exports.create_text_export_inner(
             text_id=text.id,
-            export_type=ExportType.XML,
+            export_key="{}.xml",
             app_environment=flask_app.config["AMBUDA_ENVIRONMENT"],
             engine=engine,
         )
@@ -225,10 +232,11 @@ def test_update_existing_export(flask_app, s3_mocks):
 
         first_size = export.size
         first_updated_at = export.updated_at
+        first_checksum = export.sha256_checksum
 
         text_exports.create_text_export_inner(
             text_id=text.id,
-            export_type=ExportType.XML,
+            export_key="{}.xml",
             app_environment=flask_app.config["AMBUDA_ENVIRONMENT"],
             engine=engine,
         )
@@ -236,6 +244,7 @@ def test_update_existing_export(flask_app, s3_mocks):
         export = q.text_export(export_slug)
         assert export.size == first_size
         assert export.updated_at >= first_updated_at
+        assert export.sha256_checksum == first_checksum
 
 
 def test_delete_text_export(flask_app, s3_mocks):
@@ -248,7 +257,7 @@ def test_delete_text_export(flask_app, s3_mocks):
 
         text_exports.create_text_export_inner(
             text_id=text.id,
-            export_type=ExportType.XML,
+            export_key="{}.xml",
             app_environment=flask_app.config["AMBUDA_ENVIRONMENT"],
             engine=engine,
         )
@@ -288,7 +297,7 @@ def test_create_tokens_export_without_parse_data(flask_app, s3_mocks):
 
         text_exports.create_text_export_inner(
             text_id=text.id,
-            export_type=ExportType.TOKENS,
+            export_key="{}-tokens.csv",
             app_environment=flask_app.config["AMBUDA_ENVIRONMENT"],
             engine=engine,
         )

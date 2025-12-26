@@ -4,7 +4,7 @@ import xml.etree.ElementTree as ET
 from collections.abc import Iterator
 from pathlib import Path
 
-from indic_transliteration import sanscript
+from vidyut.lipi import transliterate, Scheme
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -67,9 +67,7 @@ def map_keys_to_slugs(text_slug):
         for b in blocks:
             for line in ET.fromstring(b.xml).iter("l"):
                 raw_text = "".join(line.itertext())
-                raw_text = sanscript.transliterate(
-                    raw_text, sanscript.DEVANAGARI, sanscript.SLP1
-                )
+                raw_text = transliterate(raw_text, Scheme.Devanagari, Scheme.Slp1)
                 block_key = dcs.make_block_key(raw_text)
                 key_to_slug.setdefault(block_key, []).append(b.slug)
 

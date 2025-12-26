@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from xml.etree import ElementTree as ET
 
 import defusedxml.ElementTree as DET
-from indic_transliteration import sanscript
+from vidyut.lipi import transliterate, Scheme
 
 from ambuda.seed.utils.sandhi_utils import AC
 from ambuda.utils.word_parses import Token
@@ -109,15 +109,15 @@ def get_padas_for_text(text: str, iter_tokens: Iterator) -> list[Chunk]:
     return chunks
 
 
-def transliterate_text_to(xml: ET.Element, source: str, dest: str):
+def transliterate_text_to(xml: ET.Element, source: Scheme, dest: Scheme):
     for el in xml.iter("*"):
         if el.attrib.get("lang") == "en":
             continue
         if el.text:
-            el.text = sanscript.transliterate(el.text, source, dest)
+            el.text = transliterate(el.text, source, dest)
         # Ignore xml.tail, since it's not within `xml`.
         if el.tail and el is not xml:
-            el.tail = sanscript.transliterate(el.tail, source, dest)
+            el.tail = transliterate(el.tail, source, dest)
 
 
 def create_backup_parse(tokens: list[Token]) -> ET.Element:
@@ -135,7 +135,7 @@ def create_backup_parse(tokens: list[Token]) -> ET.Element:
         else:
             t.tail = " "
         div.append(t)
-    transliterate_text_to(div, sanscript.SLP1, sanscript.DEVANAGARI)
+    transliterate_text_to(div, Scheme.Slp1, Scheme.Devanagari)
 
     explain = ET.Element("p")
     explain.attrib["class"] = "mb-2 text-sm"
@@ -150,7 +150,7 @@ def align_text_with_parse(xml_blob: str, tokens: list[Token]) -> str:
     iter_tokens = iter(tokens)
 
     xml = DET.fromstring(xml_blob)
-    transliterate_text_to(xml, sanscript.DEVANAGARI, sanscript.SLP1)
+    transliterate_text_to(xml, Scheme.Devanagari, Scheme.Slp1)
 
     # In-order traversal of XML text nodes
     for text, el, attr in list(_iter_text_with_parent(xml)):
@@ -177,5 +177,5 @@ def align_text_with_parse(xml_blob: str, tokens: list[Token]) -> str:
             el.tail = None
             el[:] += chunk_elems
 
-    transliterate_text_to(xml, sanscript.SLP1, sanscript.DEVANAGARI)
+    transliterate_text_to(xml, Scheme.Slp1, Scheme.Devanagari)
     return transform(xml, tei_xml)

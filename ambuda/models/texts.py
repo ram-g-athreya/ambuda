@@ -243,6 +243,8 @@ class TextExport(Base):
     s3_path: Mapped[str] = mapped_column(String)
     #: Size in bytes
     size: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: SHA256 checksum of the file contents
+    sha256_checksum: Mapped[str | None] = mapped_column(String, nullable=True)
     #: When this export was last updated.
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), nullable=False

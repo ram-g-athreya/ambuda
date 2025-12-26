@@ -1,8 +1,8 @@
-from indic_transliteration import sanscript
+from vidyut.lipi import transliterate, Scheme
 
 
 def d(s) -> str:
-    return sanscript.transliterate(s, sanscript.HK, sanscript.DEVANAGARI)
+    return transliterate(s, Scheme.HarvardKyoto, Scheme.Devanagari)
 
 
 def test_index(client):

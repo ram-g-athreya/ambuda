@@ -27,7 +27,7 @@ import xml.etree.ElementTree as ET
 from collections.abc import Iterator
 
 import click
-from indic_transliteration import sanscript
+from vidyut.lipi import transliterate, Scheme
 
 from ambuda.seed.utils.cdsl_utils import create_from_scratch
 from ambuda.seed.utils.data_utils import create_db, fetch_text
@@ -103,7 +103,7 @@ def _make_key(xml: ET.Element) -> str:
     key = xml.find("./dentry").text
     assert key
 
-    key = sanscript.transliterate(key, sanscript.DEVANAGARI, sanscript.SLP1)
+    key = transliterate(key, Scheme.Devanagari, Scheme.Slp1)
     key = standardize_key(key)
     return key
 
