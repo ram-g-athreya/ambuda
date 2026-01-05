@@ -4,39 +4,148 @@ import dataclasses as dc
 import defusedxml.ElementTree as DET
 import re
 import xml.etree.ElementTree as ET
+from enum import StrEnum
 
 from ambuda import database as db
 
 
 DEFAULT_PRINT_PAGE_NUMBER = "-"
-VALID_BLOCK_ELEMENTS = {
-    "p",
-    "verse",
-    "footnote",
-    "heading",
-    "trailer",
-    "title",
-    "subtitle",
-    "ignore",
+
+
+# Keep in sync with prosemirror-editor.ts::BLOCK_TYPES
+class BlockType(StrEnum):
+    PARAGRAPH = "p"
+    VERSE = "verse"
+    FOOTNOTE = "footnote"
+    HEADING = "heading"
+    TRAILER = "trailer"
+    TITLE = "title"
+    SUBTITLE = "subtitle"
+    IGNORE = "ignore"
+
+
+# Keep in sync with marks-config.ts::INLINE_MARKS
+class InlineType(StrEnum):
+    ERROR = "error"
+    FIX = "fix"
+    SPEAKER = "speaker"
+    STAGE = "stage"
+    REF = "ref"
+    FLAG = "flag"
+    CHAYA = "chaya"
+
+
+@dc.dataclass
+class ValidationSpec:
+    children: set[str]
+    attrib: set[str]
+
+
+class ValidationType(StrEnum):
+    WARNING = "warning"
+    ERROR = "error"
+
+
+@dc.dataclass
+class ValidationResult:
+    type: ValidationType
+    message: str
+
+    @staticmethod
+    def error(message: str) -> "ValidationResult":
+        return ValidationResult(type=ValidationType.ERROR, message=message)
+
+    @staticmethod
+    def warning(message: str) -> "ValidationResult":
+        return ValidationResult(type=ValidationType.WARNING, message=message)
+
+
+CORE_INLINE_TYPES = set(InlineType)
+VALIDATION_SPECS = {
+    "page": ValidationSpec(children=set(BlockType), attrib=set()),
+    BlockType.PARAGRAPH: ValidationSpec(
+        children=CORE_INLINE_TYPES,
+        attrib={"lang", "text", "n", "merge-next", "merge-text"},
+    ),
+    BlockType.VERSE: ValidationSpec(
+        children=CORE_INLINE_TYPES,
+        attrib={"lang", "text", "n", "merge-next", "merge-text"},
+    ),
+    BlockType.FOOTNOTE: ValidationSpec(
+        children=CORE_INLINE_TYPES, attrib={"lang", "text", "mark"}
+    ),
+    BlockType.HEADING: ValidationSpec(
+        children=CORE_INLINE_TYPES, attrib={"lang", "text", "n"}
+    ),
+    BlockType.TRAILER: ValidationSpec(
+        children=CORE_INLINE_TYPES, attrib={"lang", "text", "n"}
+    ),
+    BlockType.TITLE: ValidationSpec(
+        children=CORE_INLINE_TYPES, attrib={"lang", "text", "n"}
+    ),
+    BlockType.SUBTITLE: ValidationSpec(
+        children=CORE_INLINE_TYPES, attrib={"lang", "text", "n"}
+    ),
+    BlockType.IGNORE: ValidationSpec(
+        children=CORE_INLINE_TYPES, attrib={"lang", "text"}
+    ),
+    **{
+        tag: ValidationSpec(children=set(InlineType), attrib=set())
+        for tag in InlineType
+    },
 }
 
 
-def is_valid_page_xml(content: str) -> bool:
+def validate_page_xml(content: str) -> list[ValidationResult]:
+    results = []
+
     try:
         root = DET.fromstring(content)
-    except ET.ParseError:
-        return False
+    except ET.ParseError as e:
+        results.append(ValidationResult.error(f"XML parse error: {e}"))
+        return results
 
     # Root tag should always be "page"
     if root.tag != "page":
-        return False
+        results.append(
+            ValidationResult.error(f"Root tag must be 'page', got '{root.tag}'")
+        )
+        return results
+
+    def _validate_element(el, tag, path=()):
+        current_path = path + (tag,)
+
+        if tag not in VALIDATION_SPECS:
+            results.append(
+                ValidationResult.error(
+                    f"Unknown element '{tag}' at {'/'.join(current_path)}"
+                )
+            )
+            return
+
+        spec = VALIDATION_SPECS[tag]
+
+        for attr in el.attrib:
+            if attr not in spec.attrib:
+                results.append(
+                    ValidationResult.error(
+                        f"Unexpected attribute '{attr}' on element '{tag}' at {'/'.join(current_path)}"
+                    )
+                )
+
+        for child in el:
+            if child.tag not in spec.children:
+                results.append(
+                    ValidationResult.error(
+                        f"Unexpected child element '{child.tag}' in '{tag}' at {'/'.join(current_path)}"
+                    )
+                )
+            _validate_element(child, child.tag, current_path)
 
     # Immediate children should be a known type (for dropdown support)
-    for child in root:
-        if child.tag not in VALID_BLOCK_ELEMENTS:
-            return False
+    _validate_element(root, "page")
 
-    return True
+    return results
 
 
 def _inner_xml(el):
@@ -46,22 +155,157 @@ def _inner_xml(el):
     return "".join(buf)
 
 
-def _rewrite_to_tei_xml(xml):
-    # TODO: footnote --> <note xml:id="..." type="footnote">
-    # TODO: [^1] --> <ref target="#..." />
-    for el in xml.iter():
-        match el.tag:
-            case "verse":
-                el.tag = "lg"
-            case "p":
-                pass
-            case "error":
-                el.tag = "sic"
-            case "fix":
-                el.tag = "corr"
-            case _:
-                el.tag = None
-                el.text = None
+def _rewrite_block_to_tei_xml(xml: ET.Element):
+    # <speaker>
+    try:
+        speaker = next(x for x in xml if x.tag == "speaker")
+    except StopIteration:
+        speaker = None
+    if speaker is not None:
+        old_tag = xml.tag
+        old_attrib = xml.attrib
+        old_children = [x for x in xml if x.tag != "speaker"]
+
+        speaker_tail = speaker.tail or ""
+        speaker.tail = ""
+
+        xml.clear()
+        xml.tag = "sp"
+        xml.append(speaker)
+        if not old_children and not speaker_tail.strip():
+            # Special case: <p> contains only speaker, so don't create a child elem.
+            return
+
+        xml.append(ET.Element(old_tag))
+        xml[-1].attrib = old_attrib
+        xml[-1].text = (speaker_tail + (xml[-1].text or "")).strip()
+        xml[-1].extend(old_children)
+        _rewrite_block_to_tei_xml(xml[-1])
+        return
+
+    # <error> and <fix>
+    i = 0
+    while i < len(xml):
+        el = xml[i]
+        if el.tag not in ("error", "fix"):
+            i += 1
+            continue
+
+        # Standardize order: <error> then <fix>
+        if i + 1 < len(xml):
+            el_next = xml[i + 1]
+            if (el.tag, el_next.tag) == ("fix", "error"):
+                xml[i], xml[i + 1] = el_next, el
+
+        # Reload since `el` may be stale after swap.
+        el = xml[i]
+        if el.tag == "error":
+            error = xml[i]
+            maybe_fix = xml[i + 1] if i + 1 < len(xml) else None
+
+            choice = ET.Element("choice")
+            sic = ET.SubElement(choice, "sic")
+            sic.text = el.text or ""
+            corr = ET.SubElement(choice, "corr")
+            if maybe_fix is not None:
+                corr.text = maybe_fix.text or ""
+
+            if maybe_fix is not None:
+                del xml[i + 1]
+            del xml[i]
+
+            xml.insert(i, choice)
+        elif el.tag == "fix":
+            # Edge case: <fix> without <error> is renamed to <supplied>.
+            el.tag = "supplied"
+
+        i += 1
+
+    tag_rename = {
+        "verse": "lg",
+        "heading": "head",
+    }
+    xml.tag = tag_rename.get(xml.tag, xml.tag)
+
+    # <p> text normalization
+    if xml.tag == "p":
+
+        def _normalize_text(xml):
+            xml.text = re.sub(r"-\n", "", xml.text or "", flags=re.M)
+            xml.text = re.sub(r"\s+", " ", xml.text, flags=re.M)
+            xml.tail = re.sub(r"-\n", "", xml.tail or "", flags=re.M)
+            xml.tail = re.sub(r"\s+", " ", xml.tail, flags=re.M)
+            for el in xml:
+                _normalize_text(el)
+
+        _normalize_text(xml)
+
+        # <chaya> is currently supported only for <p> elements.
+        try:
+            chaya = next(x for x in xml if x.tag == "chaya")
+        except StopIteration:
+            chaya = None
+        if chaya is not None:
+            choice = ET.Element("choice")
+            choice.attrib["type"] = "chaya"
+
+            prakrit = ET.SubElement(choice, "seg")
+            prakrit.attrib["xml:lang"] = "pra"
+            prakrit.text = xml.text
+            prakrit.extend(x for x in xml if x.tag != "chaya")
+
+            sanskrit = ET.SubElement(choice, "seg")
+            sanskrit.attrib["xml:lang"] = "sa"
+            sanskrit.text = chaya.text
+            sanskrit.extend(chaya)
+
+            xml.text = ""
+            del xml[:]
+            xml.append(choice)
+
+    # <verse> line splitting
+    if xml.tag == "lg":
+        lines = []
+        for fragment in (xml.text or "").strip().splitlines():
+            line = ET.Element("l")
+            line.text = fragment
+            lines.append(line)
+
+        for el in xml:
+            if not lines:
+                lines.append(ET.Element("l"))
+            lines[-1].append(el)
+            for i, fragment in enumerate((el.tail or "").strip().splitlines()):
+                if i == 0:
+                    el.tail = fragment
+                else:
+                    lines.append(ET.Element("l"))
+                    lines[-1].text = fragment
+
+        xml.text = ""
+        xml.clear()
+        xml.extend(lines)
+
+
+def _concatenate_tei_xml_blocks(first: ET.Element, second: ET.Element):
+    """Concatenate two blocks of TEI xml by updating the first block in-place.
+
+    Use case: merging blocks across page breaks.
+    """
+    if first.tag == "sp":
+        # Special case for <sp>: concatenate children, leaving speaker alone.
+        assert len(first) == 2
+        _concatenate_tei_xml_blocks(first[1], second)
+        return
+
+    if first.tag == "p":
+        # Special case for <p>
+        if len(first):
+            first[-1].tail = (first[-1].tail or "") + " " + (second.text or "")
+        else:
+            first.text = (first.text or "") + " " + (second.text or "")
+
+    first.extend(second)
 
 
 @dc.dataclass
@@ -70,6 +314,7 @@ class ProofBlock:
 
     #: The block's type (paragraph, verse, etc.)
     type: str
+    #: The block payload.
     content: str
 
     # general attributes
@@ -293,7 +538,7 @@ class ProofProject:
     pages: list[ProofPage]
 
     @staticmethod
-    def from_revisions(revisions: list[str]):
+    def from_revisions(revisions: list[db.Revision]):
         """Create structured data from a project's latest revisions."""
         pages = []
         for revision in revisions:
@@ -332,76 +577,33 @@ class ProofProject:
                     if block.text == target and block.n:
                         yield (i, page, block)
 
-        tei_tag_mapping = {
-            "p": "p",
-            "verse": "lg",
-        }
-
         # TODO:
         # - generalize multi-line inline tag behavior for lg
+
+        # n --> block
         tree_map = {}
+        # n --> page ID
         page_map = {}
         for page_index, page, block in _iter_blocks():
-            if block.type not in tei_tag_mapping:
+            if block.type not in {"p", "verse"}:
                 continue
 
-            # Rewrite tags to match TEI
-            #
-            # TODO: double XML parse (once to create Block, once here.)
-            # In the long run, use TEI XML as the backing store everywhere?
             block_xml = DET.fromstring(f"<{block.type}>{block.content}</{block.type}>")
-            _rewrite_to_tei_xml(block_xml)
+            _rewrite_block_to_tei_xml(block_xml)
 
             tag_name = block_xml.tag
             if block.n in tree_map:
-                root = tree_map[block.n]
+                first = tree_map[block.n]
+                _concatenate_tei_xml_blocks(first, block_xml)
             else:
-                root = ET.Element(tag_name)
-                root.attrib["n"] = block.n
-                tree_map[block.n] = root
+                block_xml.attrib["n"] = block.n
+                tree_map[block.n] = block_xml
                 page_map[block.n] = page.id
-
-            root_has_children = len(root)
-            root_has_text = root.text is not None
 
             try:
                 print_page_number = page_numbers[page_index]
             except IndexError:
                 print_page_number = DEFAULT_PRINT_PAGE_NUMBER
-
-            match tag_name:
-                case "lg":
-                    if root.text:
-                        errors.append("<lg> elements should have no direct text.")
-                        continue
-
-                    lines = [x.strip() for x in block.content.splitlines() if x.strip()]
-                    # One <l> element per line.
-                    for line in lines:
-                        # HACK: inline markup. Use <p> so the root tag isn't cleared.
-                        temp = DET.fromstring(f"<p>{line}</p>")
-                        _rewrite_to_tei_xml(temp)
-
-                        L = ET.SubElement(root, "l")
-                        L.text = temp.text
-                        L.extend(temp)
-                case "p":
-                    for el in block_xml.iter():
-                        if el.text:
-                            el.text = el.text.replace("-\n", "").replace("\n", " ")
-                        if el.tail:
-                            el.tail = el.tail.replace("-\n", "").replace("\n", " ")
-
-                    if root_has_children or root_has_text:
-                        pb = ET.SubElement(root, "pb")
-                        pb.attrib["n"] = print_page_number
-                        pb.tail = block_xml.text
-                    else:
-                        root.text = block_xml.text
-                    root.extend(block_xml)
-
-                case _:
-                    pass
 
         tei_sections = {}
         for block_slug, tree in tree_map.items():

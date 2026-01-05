@@ -160,7 +160,7 @@
   }
 
   /* Prosemirror mark CSS */
-  .pm-error, .pm-fix, .pm-flag, .pm-stage, .pm-speaker {
+  .pm-error, .pm-fix, .pm-flag, .pm-stage, .pm-speaker, .pm-chaya {
     @apply border-b-2 pr-1;
   }
 
@@ -215,6 +215,15 @@
 
   .pm-speaker:before {
     content: "📣 ";
+    @apply text-xs pl-1;
+  }
+
+  .pm-chaya {
+    @apply bg-slate-500 text-white border-slate-600;
+  }
+
+  .pm-chaya:before {
+    content: "🌒 ";
     @apply text-xs pl-1;
   }
 

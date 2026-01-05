@@ -6,6 +6,7 @@ export interface InlineMarkConfig {
   excludes?: string;
 }
 
+// Keep in sync with ambuda/utils/structuring.py::InlineType
 export const INLINE_MARKS: InlineMarkConfig[] = [
   {
     name: 'error',
@@ -46,6 +47,13 @@ export const INLINE_MARKS: InlineMarkConfig[] = [
     label: 'Mark as speaker',
     className: 'pm-speaker',
     excludes: 'stage',
+  },
+  {
+    name: 'chaya',
+    emoji: '🌒',
+    label: 'Mark as chaya (gloss)',
+    className: 'pm-chaya',
+    excludes: 'speaker',
   },
 ];
 

@@ -6,6 +6,7 @@ import { history, undo as pmUndo, redo as pmRedo } from 'prosemirror-history';
 import { baseKeymap } from 'prosemirror-commands';
 import { INLINE_MARKS, getAllMarkNames, type MarkName } from './marks-config.ts';
 
+// Keep in sync with ambuda/utils/structuring.py::BlockType
 const BLOCK_TYPES = [
   { tag: 'p', label: 'Paragraph', color: 'blue' },
   { tag: 'verse', label: 'Verse', color: 'purple' },

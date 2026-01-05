@@ -491,6 +491,11 @@ export default () => ({
     navigator.clipboard.writeText(character);
   },
 
+  copyPageXML() {
+    const content = Alpine.raw(this.editor).getText();
+    navigator.clipboard.writeText(content);
+  },
+
   async openHistoryModal() {
     this.historyModalOpen = true;
     this.historyLoading = true;

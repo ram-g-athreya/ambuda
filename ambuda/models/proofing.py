@@ -74,6 +74,7 @@ class Project(Base):
 
     #: Human-readable title, which we show on the page.
     display_title = Column(String, nullable=False)
+
     #: The full book title as it appears in print.
     print_title = string()
     #: The document's author.
@@ -252,7 +253,7 @@ class Revision(Base):
     #: An optional editor summary for this revision.
     summary = Column(Text_, nullable=False, default="")
     #: The actual content of this revision.
-    content = Column(Text_, nullable=False)
+    content: Mapped[str] = mapped_column(Text_, nullable=False)
 
     #: An ordered list of revisions for this page (newest first).
     author = relationship("User", backref="revisions")

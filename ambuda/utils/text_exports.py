@@ -153,27 +153,55 @@ def create_xml_file(text: db.Text, out_path: Path) -> None:
         with xf.element("TEI", xmlns="http://www.tei-c.org/ns/1.0"):
             with xf.element("teiHeader"):
                 with xf.element("fileDesc"):
-                    with xf.element("title"):
-                        xf.write(text.title)
-                    with xf.element("author"):
-                        xf.write(text.author.name if text.author else "(missing)")
+                    with xf.element("titleStmt"):
+                        with xf.element("title"):
+                            xf.write(text.title)
+                        with xf.element("title"):
+                            xf.write("A machine-readable edition")
+                        with xf.element("author"):
+                            xf.write(text.author.name if text.author else "(missing)")
+                        with xf.element("respStmt"):
+                            with xf.element("persName"):
+                                # For now, just me. Change this in the future.
+                                xf.write("Arun Prasad")
+                            with xf.element("resp"):
+                                xf.write("Creation of machine-readable version.")
 
-                with xf.element("publicationStmt"):
-                    with xf.element("publisher"):
-                        xf.write("Ambuda (https://ambuda.org)")
-                    with xf.element("availability"):
-                        xf.write("TODO")
+                    with xf.element("publicationStmt"):
+                        with xf.element("authority"):
+                            xf.write("Ambuda (https://ambuda.org)")
+                        with xf.element("availability"):
+                            xf.write("TODO")
+                        with xf.element("date"):
+                            # For now, hard-code the current year.
+                            xf.write("2026")
 
-                with xf.element("notesStmt"):
-                    with xf.element("note"):
-                        if text.project_id is not None:
-                            xf.write(
-                                "This text has been created by direct export from Ambuda's proofing system."
-                            )
-                        else:
-                            xf.write(
-                                "This text has been created by third-party import from another site."
-                            )
+                    with xf.element("notesStmt"):
+                        with xf.element("note"):
+                            if text.project_id is not None:
+                                xf.write(
+                                    "This text has been created by direct export from Ambuda's proofing environment."
+                                )
+                            else:
+                                xf.write(
+                                    "This text has been created by third-party import from another site."
+                                )
+
+                    with xf.element("sourceDesc"):
+                        with xf.element("title"):
+                            xf.write("TODO: book title")
+                        with xf.element("author"):
+                            xf.write("TODO: book author")
+                        with xf.element("editor"):
+                            with xf.element("name"):
+                                xf.write("TODO: book editor")
+                        with xf.element("publisher"):
+                            xf.write("TODO: book publisher")
+                        with xf.element("pubPlace"):
+                            xf.write("TODO: publisher location")
+                        with xf.element("date"):
+                            xf.write("TODO: book date")
+                # </fileDesc>
 
                 with xf.element("encodingDesc"):
                     with xf.element("projectDesc"):
@@ -181,11 +209,21 @@ def create_xml_file(text: db.Text, out_path: Path) -> None:
                             xf.write(
                                 "Ambuda is an online library of Sanskrit literature."
                             )
+                    with xf.element("refsDecl"):
+                        pass
+                # </encodingDesc>
+
+                with xf.element("revisionDesc"):
+                    pass
+                # </revisionDesc>
 
             # Main text
             session = object_session(text)
             assert session
-            with xf.element("text"):
+
+            text_id = "TODO"
+            text_lang = "TODO"
+            with xf.element("text", {"xml:id": text_id, "xml:lang": text_lang}):
                 with xf.element("body"):
                     for section in text.sections:
                         for block in section.blocks:
@@ -193,6 +231,8 @@ def create_xml_file(text: db.Text, out_path: Path) -> None:
                             el.set("n", block.slug)
                             xf.write(el)
                         session.expire(section)
+            # </text>
+        # </TEI>
 
 
 def create_plain_text(text: db.Text, file_path: Path, xml_path: Path) -> None:

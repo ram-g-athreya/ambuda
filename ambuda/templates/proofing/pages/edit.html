@@ -16,9 +16,24 @@
 {% endmacro %}
 
 
+{% set button_css = "block p-1 px-2 hover:bg-slate-700" %}
+{% macro _dropdown_button(slug, name) %}
+<button class="{{ button_css }}"
+   @mousedown.prevent="toggleMenu('{{ slug }}')"
+   @mouseenter="hoverMenu('{{ slug }}')">{{ name }}</button>
+{% endmacro %}
+
+{% macro _dropdown_pane(slug) %}
+<div x-show="activeMenu === '{{ slug }}'" @mousedown.outside="activeMenu = null" class="dropdown-pane w-48">
+  <ul class="text-sm" @click.prevent="activeMenu = null">
+    {{ caller() }}
+  </ul>
+</div>
+{% endmacro %}
+
 {% macro _dropdown_item(fn, text) %}
 <li>
-  <button class="dropdown-item" @click.prevent="{{ fn }}">{{ text|safe }}</button>
+  <button class="dropdown-item" @mouseup.prevent="{{ fn }}">{{ text|safe }}</button>
 </li>
 {% endmacro %}
 
@@ -49,11 +64,22 @@
 
 {% block title %}Edit: {{ project.display_title }}/{{ cur.slug }} | Ambuda{% endblock %}
 
+<style>
+  [x-cloak] { display: none !important; }
+</style>
 
 {% block header %}{% endblock %}
 {% block footer %}{% endblock %}
 {% block main %}
-<div class="h-screen flex flex-col overflow-hidden" x-data="proofer" @keydown.window="if (($event.metaKey || $event.ctrlKey) && $event.key === 'k') { $event.preventDefault(); openCommandPalette(); }">
+{# Loading overlay shown while Alpine.js initializes #}
+<div id="editor-loading" class="h-screen flex items-center justify-center bg-slate-50">
+  <div class="text-center">
+    <div class="text-lg text-slate-600 mb-2">{{ _('Loading editor...') }}</div>
+    <div class="text-sm text-slate-400">{{ _('Please wait') }}</div>
+  </div>
+</div>
+
+<div class="h-screen flex flex-col overflow-hidden" x-data="proofer" x-init="document.getElementById('editor-loading').style.display = 'none'" x-cloak @keydown.window="if (($event.metaKey || $event.ctrlKey) && $event.key === 'k') { $event.preventDefault(); openCommandPalette(); }">
 
   {# Command menu: edit, view, tools, ... #}
   {% set button_css = "block p-1 px-2 hover:bg-slate-700" %}
@@ -64,91 +90,86 @@
   }">
     {# Left-aligned (standard commands) #}
     <div class="flex">
+
     <div class="relative">
-      <button class="{{ button_css }}"
-         @click.prevent="toggleMenu('edit')"
-         @mouseenter="hoverMenu('edit')">{{ _('Edit') }}</button>
-      <div x-show="activeMenu === 'edit'" @click.outside="activeMenu = null" class="dropdown-pane w-48">
-        <ul class="text-sm" @click.prevent="activeMenu = null">
-          {{ _dropdown_item('undo', _('Undo')) }}
-          {{ _dropdown_item('redo', _('Redo')) }}
-          {{ _dropdown_separator() }}
-          {{ _dropdown_item('insertBlock', _('Insert block')) }}
-          {{ _dropdown_item('deleteBlock', _('Delete active block')) }}
-          {{ _dropdown_item('moveBlockUp', _('Move block up')) }}
-          {{ _dropdown_item('moveBlockDown', _('Move block down')) }}
-          {{ _dropdown_separator() }}
-          {# IMPORTANT: Keep in sync with marks-config.ts
-             These mark commands are available in the command palette (Cmd+K)
-             which is generated automatically from marks-config.ts.
-             TODO: Consider generating this menu dynamically from INLINE_MARKS #}
-          {{ _dropdown_item("toggleMark('error')", _('Mark as error')) }}
-          {{ _dropdown_item("toggleMark('fix')", _('Mark as fix')) }}
-          {{ _dropdown_item("toggleMark('flag')", _('Mark as unclear')) }}
-          {{ _dropdown_item("toggleMark('ref')", _('Mark as footnote number')) }}
-          {{ _dropdown_item("toggleMark('stage')", _('Mark as stage direction')) }}
-          {{ _dropdown_item("toggleMark('speaker')", _('Mark as speaker')) }}
-        </ul>
-      </div>
+      {{ _dropdown_button('page', _('Page')) }}
+      {% call _dropdown_pane('page') %}
+        {{ _dropdown_item('copyPageXML', _('Copy page XML')) }}
+      {% endcall %}
     </div>
 
     <div class="relative">
-      <button class="{{ button_css }}"
-         @click.prevent="toggleMenu('view')"
-         @mouseenter="hoverMenu('view')">{{ _('View') }}</button>
-      <div x-show="activeMenu === 'view'" @click.outside="activeMenu = null" class="dropdown-pane w-48">
-        <ul class="text-sm" @click.prevent="activeMenu = null">
-          {{ _dropdown_item('displayImageOnLeft', _('Show image on left')) }}
-          {{ _dropdown_item('displayImageOnRight', _('Show image on right')) }}
-          {{ _dropdown_item('displayImageOnTop', _('Show image on top')) }}
-          {{ _dropdown_item('displayImageOnBottom', _('Show image on bottom')) }}
-          {{ _dropdown_separator() }}
-          {{ _dropdown_item('displayVisualView', _('Switch to visual editor')) }}
-          {{ _dropdown_item('displayXMLView', _('Switch to XML editor')) }}
-          {{ _dropdown_separator() }}
-          <li>
-            <button class="dropdown-item" @click.prevent="toggleAdvancedOptions">
-              <span x-show="!showAdvancedOptions">{{ _('Show advanced options') }}</span>
-              <span x-show="showAdvancedOptions">{{ _('Hide advanced options') }}</span>
-            </button>
-          </li>
-        </ul>
-      </div>
+      {{ _dropdown_button('edit', _('Edit')) }}
+      {% call _dropdown_pane('edit') %}
+        {{ _dropdown_item('undo', _('Undo')) }}
+        {{ _dropdown_item('redo', _('Redo')) }}
+        {{ _dropdown_separator() }}
+        {{ _dropdown_item('insertBlock', _('Insert block')) }}
+        {{ _dropdown_item('deleteBlock', _('Delete active block')) }}
+        {{ _dropdown_item('moveBlockUp', _('Move block up')) }}
+        {{ _dropdown_item('moveBlockDown', _('Move block down')) }}
+        {{ _dropdown_separator() }}
+        {# IMPORTANT: Keep in sync with marks-config.ts
+           These mark commands are available in the command palette (Cmd+K)
+           which is generated automatically from marks-config.ts.
+           TODO: Consider generating this menu dynamically from INLINE_MARKS #}
+        {{ _dropdown_item("toggleMark('error')", _('Mark as error')) }}
+        {{ _dropdown_item("toggleMark('fix')", _('Mark as fix')) }}
+        {{ _dropdown_item("toggleMark('flag')", _('Mark as unclear')) }}
+        {{ _dropdown_item("toggleMark('ref')", _('Mark as footnote number')) }}
+        {{ _dropdown_item("toggleMark('stage')", _('Mark as stage direction')) }}
+        {{ _dropdown_item("toggleMark('speaker')", _('Mark as speaker')) }}
+        {{ _dropdown_item("toggleMark('chaya')", _('Mark as chaya (gloss)')) }}
+      {% endcall %}
     </div>
 
     <div class="relative">
-      <button class="{{ button_css }}"
-         @click.prevent="toggleMenu('tools')"
-         @mouseenter="hoverMenu('tools')">{{ _('Tools') }}</button>
-      <div x-show="activeMenu === 'tools'" @click.outside="activeMenu = null" class="dropdown-pane w-64">
-        <ul class="text-sm" @click.prevent="activeMenu = null">
-          <li>
-            <button class="dropdown-item"
-                    @click.prevent="runOCR"
-                    :disabled="isRunningOCR"
-                    x-text="isRunningOCR ? '{{ _("Running OCR ...") }}' : '{{ _("Run OCR") }}'">
-            </button>
-          </li>
-          {% if current_user is defined and current_user.is_authenticated and current_user.is_p2 %}
-          <li>
-            <button class="dropdown-item"
-                    @click.prevent="runLLMStructuring"
-                    :disabled="isRunningLLMStructuring"
-                    x-text="isRunningLLMStructuring ? '{{ _("Running LLM Structuring ...") }}' : '{{ _("Run LLM Structuring") }}'">
-            </button>
-          </li>
-          {% endif %}
-          {{ _dropdown_item('replaceColonVisarga', _('Replace : (colon) with ः (visarga)')) }}
-          {{ _dropdown_item('replaceSAvagraha', _('Replace S with ऽ (avagraha)')) }}
-        </ul>
-      </div>
+      {{ _dropdown_button('view', _('View')) }}
+      {% call _dropdown_pane('view') %}
+        {{ _dropdown_item('displayImageOnLeft', _('Show image on left')) }}
+        {{ _dropdown_item('displayImageOnRight', _('Show image on right')) }}
+        {{ _dropdown_item('displayImageOnTop', _('Show image on top')) }}
+        {{ _dropdown_item('displayImageOnBottom', _('Show image on bottom')) }}
+        {{ _dropdown_separator() }}
+        {{ _dropdown_item('displayVisualView', _('Switch to visual editor')) }}
+        {{ _dropdown_item('displayXMLView', _('Switch to XML editor')) }}
+        {{ _dropdown_separator() }}
+        <li>
+          <button class="dropdown-item" @click.prevent="toggleAdvancedOptions">
+            <span x-show="!showAdvancedOptions">{{ _('Show advanced options') }}</span>
+            <span x-show="showAdvancedOptions">{{ _('Hide advanced options') }}</span>
+          </button>
+        </li>
+      {% endcall %}
     </div>
 
     <div class="relative">
-      <button class="{{ button_css }}"
-         @click.prevent="toggleMenu('transliterator')"
-         @mouseenter="hoverMenu('transliterator')">{{ _('Transliterator') }}</button>
-      <div x-show="activeMenu === 'transliterator'" @click.outside="activeMenu = null" class="dropdown-pane w-80 p-2">
+      {{ _dropdown_button('tools', _('Tools')) }}
+      {% call _dropdown_pane('tools') %}
+        <li>
+          <button class="dropdown-item"
+                  @click.prevent="runOCR"
+                  :disabled="isRunningOCR"
+                  x-text="isRunningOCR ? '{{ _("Running OCR ...") }}' : '{{ _("Run OCR") }}'">
+          </button>
+        </li>
+        {% if current_user is defined and current_user.is_authenticated and current_user.is_p2 %}
+        <li>
+          <button class="dropdown-item"
+                  @click.prevent="runLLMStructuring"
+                  :disabled="isRunningLLMStructuring"
+                  x-text="isRunningLLMStructuring ? '{{ _("Running LLM Structuring ...") }}' : '{{ _("Run LLM Structuring") }}'">
+          </button>
+        </li>
+        {% endif %}
+        {{ _dropdown_item('replaceColonVisarga', _('Replace : (colon) with ः (visarga)')) }}
+        {{ _dropdown_item('replaceSAvagraha', _('Replace S with ऽ (avagraha)')) }}
+      {% endcall %}
+    </div>
+
+    <div class="relative">
+      {{ _dropdown_button('transliterator', _('Transliterator')) }}
+      <div x-show="activeMenu === 'transliterator'" @mousedown.outside="activeMenu = null" class="dropdown-pane w-80 p-2">
         {# i18n: source scheme when transliterating #}
         <label class="block">{{ pgettext('editor', 'From:') }}</label>
         <div class="mb-2 flex justify-between">
@@ -177,12 +198,9 @@
     </div>
 
     <div class="relative">
-      <button class="{{ button_css }}"
-         @click.prevent="toggleMenu('characters')"
-         @mouseenter="hoverMenu('characters')"
-         {# i18n: Selection menu for Unicode character in proofing editor. #}
-         >{{ pgettext('editor', 'Characters') }}</button>
-      <div x-show="activeMenu === 'characters'" @click.outside="activeMenu = null" class="p-2 dropdown-pane w-60" @click.prevent="copyCharacter">
+       {# i18n: Selection menu for Unicode character in proofing editor. #}
+      {{ _dropdown_button('characters', _('Characters')) }}
+      <div x-show="activeMenu === 'characters'" @mousedown.outside="activeMenu = null" class="p-2 dropdown-pane w-60" @click.prevent="copyCharacter">
         <p class="text-xs text-center mb-2">{{ _('Click a character to copy it.') }}</p>
         <ul class="text-center">
           {{ _latin_char_row('ā á â à', 'grid-cols-8') }}
@@ -202,15 +220,10 @@
 
     {% set history_url = url_for("proofing.page.history", project_slug=project.slug, page_slug=page_context.cur.slug) %}
     <div class="relative">
-      <button class="{{ button_css }}"
-          @click.prevent="toggleMenu('history')"
-          @mouseenter="hoverMenu('history')"
-         >{{ pgettext('editor', 'History') }}</button>
-      <div x-show="activeMenu === 'history'" @click.outside="activeMenu = null" class="dropdown-pane w-64">
-        <ul class="text-sm" @click.prevent="activeMenu = null">
-          {{ _dropdown_item('openHistoryModal', _('Show all history')) }}
-        </ul>
-      </div>
+      {{ _dropdown_button('history', pgettext('editor', 'History')) }}
+      {% call _dropdown_pane('history') %}
+        {{ _dropdown_item('openHistoryModal', _('Show all history')) }}
+      {% endcall %}
     </div>
     </div>
 
@@ -219,10 +232,8 @@
       {% if current_user.is_authenticated %}
       {% set name = current_user.username %}
       <div class="relative">
-        <button class="{{ button_css }}"
-                @click.prevent="toggleMenu('user')"
-                @mouseenter="hoverMenu('user')">{{ name }}</button>
-        <div x-show="activeMenu === 'user'" @click.outside="activeMenu = null" class="dropdown-pane w-60 right-0">
+        {{ _dropdown_button('user', name) }}
+        <div x-show="activeMenu === 'user'" @mousedown.outside="activeMenu = null" class="dropdown-pane w-60 right-0">
           <a href="{{ url_for("proofing.user.summary", username=name) }}" class="dropdown-item">
             {{ _('Profile') }}
           </a>
