@@ -341,6 +341,7 @@ def test_import_projects_and_export_projects(admin_client):
         if p.get("slug") == "test-roundtrip-project":
             json_project = p
             break
+    assert json_project
 
     # Rename the project --> force creating a new project on import
     json_project["slug"] = "test-import-project"
@@ -362,6 +363,7 @@ def test_import_projects_and_export_projects(admin_client):
     session = get_session()
     stmt = select(db.Project).filter_by(slug="test-import-project")
     imported_project = session.scalars(stmt).first()
+    assert imported_project is not None
 
     _assert_matches(
         serialize(imported_project),
@@ -384,6 +386,7 @@ def test_import_projects_and_export_projects(admin_client):
             "updated_at": Any,
             "board_id": Any,
             "creator_id": Any,
+            "status": Any,
             "genre_id": None,
         },
     )
@@ -395,6 +398,7 @@ def test_import_projects_and_export_projects(admin_client):
             "id": Any,
             "project_id": Any,
             "slug": "page-1",
+            "uuid": Any,
             "order": 1,
             "version": 0,
             "ocr_bounding_boxes": None,

@@ -90,7 +90,7 @@ def edit(username):
         form.populate_obj(user_)
         session.commit()
         flash("Saved changes.", "success")
-        return redirect(url_for("proofing.user.summary", username=username))
+        return redirect(url_for("user.summary", username=username))
 
     return render_template("proofing/user/edit.html", user=user_, form=form)
 

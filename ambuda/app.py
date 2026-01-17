@@ -24,7 +24,7 @@ from ambuda.views.auth import bp as auth
 from ambuda.views.bharati import bp as bharati
 from ambuda.views.blog import bp as blog
 from ambuda.views.dictionaries import bp as dictionaries
-from ambuda.views.proofing import bp as proofing
+from ambuda.views.proofing import bp as proofing, user_bp as users
 from ambuda.views.reader.parses import bp as parses
 from ambuda.views.reader.texts import bp as texts
 from ambuda.views.site import bp as site
@@ -137,6 +137,7 @@ def create_app(config_env: str):
     app.register_blueprint(proofing, url_prefix="/proofing")
     app.register_blueprint(site)
     app.register_blueprint(texts, url_prefix="/texts")
+    app.register_blueprint(users, url_prefix="/users")
 
     # Debug-only routes for local development.
     if app.debug or config.Env.TESTING:

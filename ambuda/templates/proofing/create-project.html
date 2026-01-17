@@ -72,22 +72,39 @@ coming from?</p>
 
 {% set radios = form.pdf_source|list %}
 <fieldset x-ref="source" class="p-4 bg-slate-100">
-  {# FIXME(arun): enable in a follow-up PR #}
-  {#
   {{ _radio2(radios[0], "source") }}
-  <div class="ml-6 my-4" x-show="source === 'archive.org'">
-    <p>We'll fetch the PDF for you from archive.org. To do so, we need the
-    PDF's <dfn>identifier</dfn>, which is the short text ID that follows
-    <kbd>/details/</kbd> in the URL.</p>
+  <div class="ml-6 my-4" x-show="source === 'url'">
+    <p>We'll fetch the PDF for you from a URL. Please provide the full URL to
+    the PDF file (e.g., from archive.org, Google Drive, Dropbox, or any other
+    publicly accessible URL).</p>
 
-    <div class="my-4 bg-slate-100">
-    <kbd>https://archive.org/details/</kbd>
-    {{ form.archive_identifier(class_="rounded border p-1", placeholder="charucharya_hindi") }}
+    <div class="my-4">
+      {{ form.pdf_url(class_="rounded border p-2 w-full", placeholder="https://example.com/document.pdf") }}
     </div>
   </div>
-  #}
 
   {{ _radio2(radios[1], "source") }}
+  <div class="ml-6 my-4" x-show="source === 'gdrive'">
+    <p>We'll fetch all PDFs from a public Google Drive folder and create one
+    project for each PDF. The folder must be publicly accessible without login.
+    Please provide the folder URL:</p>
+
+    <div class="my-4">
+      {{ form.gdrive_folder_url(class_="rounded border p-2 w-full", placeholder="https://drive.google.com/drive/folders/...") }}
+    </div>
+
+    <div class="prose ml-0 mt-4">
+      <p class="text-sm"><strong>Note:</strong> To share a Google Drive folder publicly:</p>
+      <ol class="text-sm">
+        <li>Right-click the folder and select "Share"</li>
+        <li>Click "Change to anyone with the link"</li>
+        <li>Set permission to "Viewer"</li>
+        <li>Copy the link and paste it above</li>
+      </ol>
+    </div>
+  </div>
+
+  {{ _radio2(radios[2], "source") }}
   <div class="ml-6 my-4" x-show="source === 'local'">
     <p>We'll copy the PDF from your computer. Please use the form below to find
     a PDF on your computer:</p>
@@ -100,21 +117,7 @@ coming from?</p>
 </fieldset>
 
 
-{{ step(3, "Describe") }}
-
-
-<div class="prose">
-<p>What is the title of this book? Please use the full title as it appears on
-the book's cover or title page.</p>
-</div>
-
-<fieldset class="p-4 bg-slate-100">
-  {{ form.local_title(class_="p-2 block w-full", placeholder="My book title") }}
-  <p></p>
-</fieldset>
-
-
-{{ step(4, "Verify") }}
+{{ step(3, "Verify") }}
 
 <div class="prose">
 <p>To the best of your knowledge, what is the license of this book?</p>

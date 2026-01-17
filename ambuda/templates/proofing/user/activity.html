@@ -1,4 +1,4 @@
-{% extends 'proofing/base-sidebar.html' %}
+{% extends 'proofing/base.html' %}
 {% import "macros/components.html" as components %}
 {% import "macros/proofing.html" as m %}
 {% import "macros/heatmap.html" as hm %}
@@ -7,11 +7,8 @@
 {% block title %}User: {{ user.username }} | Ambuda{% endblock %}
 
 
-{% block sidebar %}{{ m.main_nav('talk', current_user=current_user) }}{% endblock %}
-
-
 {% block content %}
-{% set url = url_for('proofing.user.summary', username=user.username) %}
+{% set url = url_for('user.summary', username=user.username) %}
 
 {{ components.flash_messages() }}
 {{ m.nested_header('Activity', user.username, url) }}

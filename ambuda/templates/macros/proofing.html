@@ -49,9 +49,7 @@
 <nav class="rounded bg-slate-100 text-slate-500 p-4 a-hover-underline text-sm">
 <h1 class="font-bold">{{ _('Help') }}</h1>
 <ul class="list-disc pl-6">
-  {{ _link('beginners', "proofing.beginners_guide", _("Beginner's guide")) }}
   {{ _link('complete', "proofing.complete_guide", _("Complete guide")) }}
-  {{ _link('manual', "proofing.editor_guide", _("Editor manual")) }}
 </ul>
 
 <h1 class="mt-2 font-bold">{{ _('Contribute') }}</h1>
@@ -59,7 +57,7 @@
   {{ _link('projects', "proofing.index", _("Ongoing projects")) }}
   {{ _link('create', "proofing.create_project", _("Create project")) }}
   {{ _link('changes', "proofing.recent_changes", _("Recent changes")) }}
-  {{ _link('tagging', "proofing.tagging.index", _("Tagging")) }}
+  {{ _link('tagging', "proofing.texts", _("Published texts")) }}
   {{ _link('talk', "proofing.talk", _("Talk")) }}
 </ul>
 </nav>
@@ -88,11 +86,11 @@
 {# User-level tabs. #}
 {% macro user_tabs(user, active, is_mod = false) %}
 {% set routes = [
-  ("about",    _("Overview"),  url_for("proofing.user.summary", username=user.username)),
-  ("activity", _("Activity"),  url_for("proofing.user.activity", username=user.username)),
+  ("about",    _("Overview"),  url_for("user.summary", username=user.username)),
+  ("activity", _("Activity"),  url_for("user.activity", username=user.username)),
 ] %}
 {% if is_mod %}{% set routes = routes + [
-  ("admin",    _("Admin"),     url_for("proofing.user.admin", username=user.username)),
+  ("admin",    _("Admin"),     url_for("user.admin", username=user.username)),
 ] %}{% endif %}
 
 {{ components.tabs(routes, active) }}
@@ -140,7 +138,7 @@
       project_slug=r.project.slug, page_slug=r.page.slug, revision_id=r.id) %}
   {% set page_url = url_for('proofing.page.edit',
       project_slug=r.project.slug, page_slug=r.page.slug) %}
-  {% set author_url = url_for('proofing.user.summary',
+  {% set author_url = url_for('user.summary',
       username=r.author.username) %}
   {% set page_title = r.project.display_title + "/" + r.page.slug %}
   {% set author = r.author.username %}
@@ -161,7 +159,7 @@
   {% set project_url = url_for('proofing.project.summary', slug=p.slug) %}
   {% set title = p.display_title %}
   {% set creator = p.creator.username %}
-  {% set creator_url = url_for('proofing.user.summary', username=creator) %}
+  {% set creator_url = url_for('user.summary', username=creator) %}
   <div>
     <span class="border border-slate-500 inline-block w-2 h-2 mr-0.5 rounded-sm"></span>
     <a class="text-slate-400 text-sm p-0.5 rounded"
@@ -201,7 +199,7 @@
         project_slug=r.project.slug, page_slug=r.page.slug, revision_id=r.id) %}
     {% set page_url = url_for('proofing.page.edit',
         project_slug=r.project.slug, page_slug=r.page.slug) %}
-    {% set author_url = url_for('proofing.user.summary',
+    {% set author_url = url_for('user.summary',
         username=r.author.username) %}
     {% set page_title = r.project.display_title + "/" + r.page.slug %}
     {% set author = r.author.username %}

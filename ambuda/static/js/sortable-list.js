@@ -38,7 +38,11 @@ export default (defaultField) => ({
 
   /** Filter the list by the user's query string. */
   filter() {
-    if (!this.query) return;
+    if (!this.query) {
+      // Reset to show all items when query is empty
+      this.displayed = new Set(this.data.map((x) => x.key));
+      return;
+    }
 
     const query = this.query.toLowerCase();
     // toLowerCase for case-insensitive matching.

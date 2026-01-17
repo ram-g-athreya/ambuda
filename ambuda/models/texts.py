@@ -9,6 +9,7 @@ We define texts with three different tables:
 
 import json
 from datetime import UTC, datetime
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, JSON, Table, event
@@ -26,6 +27,12 @@ class TitleConfig(BaseModel):
 
 class TextConfig(BaseModel):
     titles: TitleConfig = Field(default_factory=TitleConfig)
+
+
+class TextStatus(StrEnum):
+    P0 = "p0"
+    P1 = "p1"
+    P2 = "p2"
 
 
 class Text(Base):

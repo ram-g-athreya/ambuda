@@ -28,10 +28,19 @@ def _is_allowed_document_file(filename: str) -> bool:
     return Path(filename).suffix == ".pdf"
 
 
-def _required_if_archive(message: str):
+def _required_if_url(message: str):
     def fn(form, field):
         source = form.pdf_source.data
-        if source == "archive.org" and not field.data:
+        if source == "url" and not field.data:
+            raise ValidationError(message)
+
+    return fn
+
+
+def _required_if_gdrive(message: str):
+    def fn(form, field):
+        source = form.pdf_source.data
+        if source == "gdrive" and not field.data:
             raise ValidationError(message)
 
     return fn
@@ -50,27 +59,30 @@ class CreateProjectForm(FlaskForm):
     pdf_source = RadioField(
         "Source",
         choices=[
-            ("archive.org", "From archive.org"),
+            ("url", "From a URL"),
+            ("gdrive", "From a Google Drive folder"),
             ("local", "From my computer"),
         ],
         validators=[DataRequired()],
     )
-    archive_identifier = StringField(
-        "archive.org identifier",
+    pdf_url = StringField(
+        "PDF URL",
+        validators=[_required_if_url("Please provide a valid PDF URL.")],
+    )
+    url_title = StringField(
+        "Title of the book (optional - we'll generate one if not provided)",
+    )
+    gdrive_folder_url = StringField(
+        "Google Drive folder URL",
         validators=[
-            _required_if_archive("Please provide a valid archive.org identifier.")
+            _required_if_gdrive("Please provide a valid Google Drive folder URL.")
         ],
     )
     local_file = FileField(
         "PDF file", validators=[_required_if_local("Please provide a PDF file.")]
     )
     local_title = StringField(
-        "Title of the book (you can change this later)",
-        validators=[
-            _required_if_local(
-                "Please provide a title for your PDF.",
-            )
-        ],
+        "Title of the book (optional - we'll generate one if not provided)",
     )
 
     license = RadioField(
@@ -178,37 +190,74 @@ def editor_guide():
 def create_project():
     form = CreateProjectForm()
     if form.validate_on_submit():
-        title = form.local_title.data
+        pdf_source = form.pdf_source.data
 
-        # TODO: add timestamp to slug for extra uniqueness?
-        slug = slugify(title)
+        # Handle Google Drive folder uploads separately
+        if pdf_source == "gdrive":
+            gdrive_folder_url = form.gdrive_folder_url.data
+            task = project_tasks.create_projects_from_gdrive_folder.delay(
+                folder_url=gdrive_folder_url,
+                app_environment=current_app.config["AMBUDA_ENVIRONMENT"],
+                creator_id=current_user.id,
+                upload_folder=current_app.config["UPLOAD_FOLDER"],
+            )
+            return render_template(
+                "proofing/create-project-post.html",
+                stauts=task.status,
+                current=0,
+                total=0,
+                percent=0,
+                task_id=task.id,
+            )
 
-        # We accept only PDFs, so validate that the user hasn't uploaded some
-        # other kind of document format.
-        filename = form.local_file.raw_data[0].filename
-        if not _is_allowed_document_file(filename):
-            flash("Please upload a PDF.")
-            return render_template("proofing/create-project.html", form=form)
+        # Determine title based on source
+        if pdf_source == "url":
+            title = (
+                form.url_title.data
+                or f"Project {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+            pdf_url = form.pdf_url.data
+            pdf_path = None
+        else:
+            title = (
+                form.local_title.data
+                or f"Project {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+            pdf_url = None
 
-        # Create all directories for this project ahead of time.
-        # FIXME(arun): push this further into the Celery task.
-        project_dir = Path(current_app.config["UPLOAD_FOLDER"]) / "projects" / slug
-        pdf_dir = project_dir / "pdf"
-        page_image_dir = project_dir / "pages"
-        pdf_dir.mkdir(parents=True, exist_ok=True)
-        page_image_dir.mkdir(parents=True, exist_ok=True)
+            # TODO: add timestamp to slug for extra uniqueness?
+            slug = slugify(title)
 
-        # Save the original PDF so that it can be downloaded later or reused
-        # for future tasks (thumbnails, better image formats, etc.)
-        pdf_path = pdf_dir / "source.pdf"
-        form.local_file.data.save(pdf_path)
+            # We accept only PDFs, so validate that the user hasn't uploaded some
+            # other kind of document format.
+            filename = form.local_file.raw_data[0].filename
+            if not _is_allowed_document_file(filename):
+                flash("Please upload a PDF.")
+                return render_template("proofing/create-project.html", form=form)
 
+            # Create all directories for this project ahead of time.
+            # FIXME(arun): push this further into the Celery task.
+            project_dir = Path(current_app.config["UPLOAD_FOLDER"]) / "projects" / slug
+            pdf_dir = project_dir / "pdf"
+            page_image_dir = project_dir / "pages"
+            pdf_dir.mkdir(parents=True, exist_ok=True)
+            page_image_dir.mkdir(parents=True, exist_ok=True)
+
+            # Save the original PDF so that it can be downloaded later or reused
+            # for future tasks (thumbnails, better image formats, etc.)
+            pdf_path = pdf_dir / "source.pdf"
+            form.local_file.data.save(pdf_path)
+
+        # For URL-based uploads, the Celery task will handle directory creation
+        # and PDF downloading
         task = project_tasks.create_project.delay(
             display_title=title,
-            pdf_path=str(pdf_path),
-            output_dir=str(page_image_dir),
+            pdf_path=str(pdf_path) if pdf_path else None,
+            pdf_url=pdf_url,
+            output_dir=str(page_image_dir) if pdf_path else None,
             app_environment=current_app.config["AMBUDA_ENVIRONMENT"],
             creator_id=current_user.id,
+            upload_folder=current_app.config["UPLOAD_FOLDER"],
         )
         return render_template(
             "proofing/create-project-post.html",
@@ -301,6 +350,25 @@ def talk():
     all_threads.sort(key=lambda x: x[1].updated_at, reverse=True)
 
     return render_template("proofing/talk.html", all_threads=all_threads)
+
+
+@bp.route("/texts")
+def texts():
+    """List all published texts."""
+    session = q.get_session()
+    stmt = (
+        select(db.Text)
+        .options(
+            orm.selectinload(db.Text.project).load_only(
+                db.Project.slug, db.Project.display_title
+            ),
+            orm.selectinload(db.Text.author).load_only(db.Author.name),
+        )
+        .order_by(db.Text.created_at.desc())
+    )
+    texts = list(session.scalars(stmt).all())
+
+    return render_template("proofing/texts.html", texts=texts)
 
 
 @bp.route("/admin/dashboard/")

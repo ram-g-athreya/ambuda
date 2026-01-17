@@ -2,9 +2,10 @@
 
 import uuid
 from datetime import datetime, UTC
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON, String, event
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON, String, Table, event
 from sqlalchemy import Text as Text_
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 
@@ -23,6 +24,15 @@ def text():
 
 def _create_uuid():
     return str(uuid.uuid4())
+
+
+# Association table for many-to-many relationship between Project and ProjectTag
+project_tag_association = Table(
+    "project_tag_association",
+    Base.metadata,
+    Column("project_id", Integer, ForeignKey("proof_projects.id"), primary_key=True),
+    Column("tag_id", Integer, ForeignKey("project_tags.id"), primary_key=True),
+)
 
 
 class Genre(Base):
@@ -55,6 +65,26 @@ class PublishConfig(BaseModel):
 class ProjectConfig(BaseModel):
     publish: list[PublishConfig] = Field(default_factory=list)
     pages: list[str] = Field(default_factory=list)
+
+
+class ProjectStatus(StrEnum):
+    """Describes the status of some project."""
+
+    #: Generally available for editing.
+    #:
+    #: Ideally, this is the state most projects should have.
+    ACTIVE = "active"
+    #: Uploaded, but needs review before general availability.
+    #:
+    #: (Not called "in review" because all active projects are edited / "reviewed", so the name
+    #: would be confusing.)
+    PENDING = "pending"
+    #: Closed due to a potential copyright conflict.
+    CLOSED_COPYRIGHT = "closed-copy"
+    #: Closed since the project duplicates another text, either on Ambuda or elsewhere.
+    CLOSED_DUPLICATE = "closed-duplicate"
+    #: Closed because the PDF is very low quality.
+    CLOSED_QUALITY = "closed-quality"
 
 
 class Project(Base):
@@ -97,6 +127,10 @@ class Project(Base):
     #: Additional metadata for this project as a JSON document.
     #: The schema is defined in `ProjectConfig`.
     config = Column(JSON, nullable=True)
+    #: The status of this project.
+    status: Mapped[str] = mapped_column(
+        String, nullable=False, default=ProjectStatus.PENDING
+    )
 
     #: Timestamp at which this project was created.
     created_at = Column(
@@ -121,9 +155,29 @@ class Project(Base):
     pages = relationship(
         "Page", order_by=lambda: Page.order, backref="project", cascade="delete"
     )
+    #: Tags associated with this project.
+    tags = relationship(
+        "ProjectTag",
+        secondary=project_tag_association,
+        back_populates="projects",
+    )
 
     def __str__(self):
         return self.slug
+
+
+class ProjectTag(Base):
+    __tablename__ = "project_tags"
+
+    id = pk()
+    name: Mapped[str] = mapped_column(String, unique=True)
+
+    #: Projects associated with this tag.
+    projects = relationship(
+        "Project",
+        secondary=project_tag_association,
+        back_populates="tags",
+    )
 
 
 @event.listens_for(Project, "before_insert")
@@ -134,6 +188,20 @@ def validate_config(mapper, connection, project):
             ProjectConfig.model_validate_json(project.config)
         except Exception as e:
             raise ValueError(f"Project.config must be a valid JSON document: {e}")
+
+
+@event.listens_for(Project, "before_insert")
+@event.listens_for(Project, "before_update")
+def validate_status(mapper, connection, project):
+    if project.status:
+        try:
+            ProjectStatus(project.status)
+        except ValueError:
+            valid_values = ", ".join([s.value for s in ProjectStatus])
+            raise ValueError(
+                f"Project.status must be a valid ProjectStatus value. "
+                f"Got '{project.status}', expected one of: {valid_values}"
+            )
 
 
 class Page(Base):
@@ -150,6 +218,8 @@ class Page(Base):
     project_id = foreign_key("proof_projects.id")
     #: Human-readable ID, which we display in the URL.
     slug: Mapped[str] = mapped_column(String, index=True, nullable=False)
+    #: UUID (for s3 uploads, stability despite slug renames, etc.)
+    uuid = Column(String, unique=True, nullable=False, default=_create_uuid)
     #: (internal-only) A comes before B iff A.order < B.order.
     order = Column(Integer, nullable=False)
     #: (internal-only) used only so that we can implement optimistic locking

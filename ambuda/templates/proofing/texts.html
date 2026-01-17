@@ -1,0 +1,69 @@
+{% extends 'proofing/base.html' %}
+{% import "macros/components.html" as mc %}
+
+{% block title %}{{ mc.title(_('Published Texts')) }}{% endblock %}
+
+{% block content %}
+<div class="prose mb-6">
+  <h1 class="md:!mt-0">{{ _('Published Texts') }}</h1>
+  <p class="text-slate-600">All texts published from proofing projects.</p>
+</div>
+
+{% if texts %}
+<div class="overflow-x-auto">
+  <table class="min-w-full border-collapse border border-slate-300">
+    <thead class="bg-slate-100">
+      <tr>
+        <th class="border border-slate-300 p-2 text-left">{{ _('Title') }}</th>
+        <th class="border border-slate-300 p-2 text-left">{{ _('Project') }}</th>
+        <th class="border border-slate-300 p-2 text-left">{{ _('Author') }}</th>
+        <th class="border border-slate-300 p-2 text-left">{{ _('Created') }}</th>
+        <th class="border border-slate-300 p-2 text-left">{{ _('Actions') }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for text in texts %}
+      <tr class="hover:bg-slate-50">
+        <td class="border border-slate-300 p-2">
+          <a href="{{ url_for('texts.text', slug=text.slug) }}" class="text-sky-900 hover:underline">{{ text.title }}</a>
+        </td>
+        <td class="border border-slate-300 p-2">
+          {% if text.project %}
+          <a href="{{ url_for('proofing.project.summary', slug=text.project.slug) }}" class="text-sky-900 hover:underline">{{ text.project.display_title }}</a>
+          {% else %}
+          <span class="text-slate-400">---</span>
+          {% endif %}
+        </td>
+        <td class="border border-slate-300 p-2">
+          {% if text.author %}
+          {{ text.author.name }}
+          {% else %}
+          <span class="text-slate-400">---</span>
+          {% endif %}
+        </td>
+        <td class="border border-slate-300 p-2 text-sm text-slate-600">
+          {% if text.created_at %}
+          {{ text.created_at.strftime('%Y-%m-%d') }}
+          {% else %}
+          <span class="text-slate-400">---</span>
+          {% endif %}
+        </td>
+        <td class="border border-slate-300 p-2">
+          <div class="flex gap-2 text-sm">
+            <a href="{{ url_for('proofing.tagging.text_tagging', text_slug=text.slug) }}" class="text-sky-900 hover:underline">{{ _('Tags') }}</a>
+            <span class="text-slate-300">|</span>
+            <a href="{{ url_for('texts.validate_text', slug=text.slug) }}" class="text-sky-900 hover:underline">{{ _('Report') }}</a>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="prose">
+  <p>{{ _('No texts have been published yet.') }}</p>
+</div>
+{% endif %}
+
+{% endblock %}

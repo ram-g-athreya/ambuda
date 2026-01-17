@@ -54,19 +54,14 @@ class ParseDataRequest(BaseModel):
 
 @bp.route("/")
 def index():
-    """All published texts."""
-    texts = q.texts()
-    sorted_texts = sorted(
-        texts,
-        key=lambda x: transliterate(x.title, Scheme.HarvardKyoto, Scheme.Devanagari),
-    )
-    return render_template("proofing/tagging/index.html", texts=sorted_texts)
+    """All published texts - redirects to /proofing/texts."""
+    return redirect(url_for("proofing.texts"))
 
 
-@bp.route("/<slug>/")
-def text(slug):
+@bp.route("/<text_slug>/tagging")
+def text_tagging(text_slug):
     """A text and its parse status."""
-    text_ = q.text(slug)
+    text_ = q.text(text_slug)
     if text_ is None:
         abort(404)
 
@@ -87,22 +82,24 @@ def text(slug):
     )
 
 
-@bp.route("/<text>/<section>/", methods=["GET", "POST"])
+@bp.route("/<text_slug>/tagging/<section>", methods=["GET", "POST"])
 @p2_required
-def section(text, section):
-    db_text = q.text(text)
+def section_tagging(text_slug, section):
+    db_text = q.text(text_slug)
     if db_text is None:
         abort(404)
 
     assert db_text
-    db_section = next(s for s in db_text.sections if s.slug == section)
+    session = q.get_session()
+    db_section = next((s for s in db_text.sections if s.slug == section), None)
     if db_section is None:
         abort(404)
 
-    session = q.get_session()
     if request.method == "POST":
         default = lambda: redirect(
-            url_for("proofing.tagging.section", text=text, section=section)
+            url_for(
+                "proofing.tagging.section_tagging", text_slug=text_slug, section=section
+            )
         )
         data = request.form.get("parse_data")
         if not data:
@@ -168,7 +165,11 @@ def section(text, section):
         else:
             flash("No changes were made", "info")
 
-        return redirect(url_for("proofing.tagging.section", text=text, section=section))
+        return redirect(
+            url_for(
+                "proofing.tagging.section_tagging", text_slug=text_slug, section=section
+            )
+        )
 
     blocks_in_section = []
     for block in db_section.blocks:
@@ -245,12 +246,16 @@ def section(text, section):
         if current_idx > 0:
             prev_section = sections_with_parse[current_idx - 1]
             prev_section_url = url_for(
-                "proofing.tagging.section", text=db_text.slug, section=prev_section.slug
+                "proofing.tagging.section_tagging",
+                text_slug=db_text.slug,
+                section=prev_section.slug,
             )
         if current_idx < len(sections_with_parse) - 1:
             next_section = sections_with_parse[current_idx + 1]
             next_section_url = url_for(
-                "proofing.tagging.section", text=db_text.slug, section=next_section.slug
+                "proofing.tagging.section_tagging",
+                text_slug=db_text.slug,
+                section=next_section.slug,
             )
 
     return render_template(
@@ -265,20 +270,20 @@ def section(text, section):
     )
 
 
-@bp.route("/<slug>/batch-tag", methods=["POST"])
+@bp.route("/<text_slug>/batch-tag", methods=["POST"])
 @p2_required
-def batch_tag(slug):
+def batch_tag(text_slug):
     """Trigger Dharmamitra batch tagging for all blocks in a text."""
-    text_ = q.text(slug)
+    text_ = q.text(text_slug)
     if text_ is None:
         abort(404)
 
     app_env = current_app.config["AMBUDA_ENVIRONMENT"]
 
     try:
-        result = tagging_tasks.tag_text.delay(app_env, slug)
+        result = tagging_tasks.tag_text.delay(app_env, text_.slug)
         flash(f"Batch tagging started. Task ID: {result.id}", "success")
     except Exception as e:
         flash(f"Error starting batch tagging: {e}", "error")
 
-    return redirect(url_for("proofing.tagging.text", slug=slug))
+    return redirect(url_for("proofing.tagging.text_tagging", text_slug=text_slug))

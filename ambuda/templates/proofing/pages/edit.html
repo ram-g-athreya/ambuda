@@ -204,7 +204,7 @@
       <div class="relative">
         {{ _dropdown_button('user', name) }}
         <div x-show="activeMenu === 'user'" @mousedown.outside="activeMenu = null" class="dropdown-pane w-60 right-0">
-          <a href="{{ url_for("proofing.user.summary", username=name) }}" class="dropdown-item">
+          <a href="{{ url_for("user.summary", username=name) }}" class="dropdown-item">
             {{ _('Profile') }}
           </a>
           <a href="{{ url_for("auth.sign_out") }}" class="dropdown-item">

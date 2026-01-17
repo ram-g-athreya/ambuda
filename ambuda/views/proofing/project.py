@@ -92,7 +92,19 @@ def _is_valid_page_number_spec(_, field):
         raise ValidationError("The page number spec isn't valid.") from e
 
 
+def _is_valid_slug(_, field):
+    if not re.match(r"[a-zA-Z0-9-]+$", field.data):
+        raise ValidationError("Invalid slug (should be alphanumeric or '-')")
+
+
 class EditMetadataForm(FlaskForm):
+    slug = StringField(
+        _l("Slug"),
+        render_kw={
+            "placeholder": _l("e.g. avantisundarikatha"),
+        },
+        validators=[DataRequired(), _is_valid_slug],
+    )
     display_title = StringField(
         _l("Display title"),
         render_kw={
@@ -283,11 +295,24 @@ def edit(slug):
     form = EditMetadataForm(obj=project_)
     if form.validate_on_submit():
         session = q.get_session()
+        new_slug = form.slug.data
+
+        # Check if slug has changed and validate uniqueness
+        if new_slug != project_.slug:
+            existing_project = q.project(new_slug)
+            if existing_project is not None:
+                form.slug.errors.append(_l("A project with this slug already exists."))
+                return render_template(
+                    "proofing/projects/edit.html",
+                    project=project_,
+                    form=form,
+                )
+
         form.populate_obj(project_)
         session.commit()
 
         flash(_l("Saved changes."), "success")
-        return redirect(url_for("proofing.project.summary", slug=slug))
+        return redirect(url_for("proofing.project.summary", slug=new_slug))
 
     return render_template(
         "proofing/projects/edit.html",

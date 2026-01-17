@@ -389,7 +389,7 @@ def page_history_api(project_slug, page_slug):
                     _external=True,
                 ),
                 "author_url": url_for(
-                    "proofing.user.summary", username=r.author.username, _external=True
+                    "user.summary", username=r.author.username, _external=True
                 ),
             }
         )

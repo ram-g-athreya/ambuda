@@ -24,6 +24,7 @@ from wtforms.validators import DataRequired
 import ambuda.database as db
 import ambuda.queries as q
 import ambuda.data_utils as data_utils
+from ambuda.models.proofing import _create_uuid
 from ambuda.utils.text_exports import ExportType
 from ambuda.tasks.text_exports import (
     delete_text_export,
@@ -563,6 +564,8 @@ def import_projects(model_name, selected_ids: list | None = None):
                 page_data["status_id"] = status.id
 
                 page = deserialize(page_data, db.Page)
+                # Set a new uuid to avoid conflicts
+                page.uuid = _create_uuid()
                 session.add(page)
                 session.flush()
 
