@@ -1,4 +1,4 @@
-/* global Alpine, $, OpenSeadragon, Sanscript, IMAGE_URL */
+/* global Alpine, $, OpenSeadragon, Sanscript, IMAGE_URL, OCR_BOUNDING_BOXES */
 /* Transcription and proofreading interface. */
 
 import { $ } from './core.ts';
@@ -20,6 +20,113 @@ const CLASSES_IMAGE_BOTTOM = 'flex flex-col h-[90vh]';
 
 const VIEW_VISUAL = 'visual';
 const VIEW_XML = 'xml';
+
+// Parse OCR bounding boxes from TSV
+function parseBoundingBoxes(tsvData) {
+  if (!tsvData) return [];
+
+  const lines = tsvData.trim().split('\n');
+  return lines.map(line => {
+    const parts = line.split('\t');
+    if (parts.length >= 5) {
+      return {
+        x1: parseInt(parts[0], 10),
+        y1: parseInt(parts[1], 10),
+        x2: parseInt(parts[2], 10),
+        y2: parseInt(parts[3], 10),
+        text: parts[4],
+      };
+    }
+    return null;
+  }).filter(box => box !== null);
+}
+
+// Calculate Levenshtein distance between two strings
+function levenshteinDistance(str1, str2) {
+  const len1 = str1.length;
+  const len2 = str2.length;
+
+  const dp = Array(len1 + 1).fill(null).map(() => Array(len2 + 1).fill(0));
+
+  for (let i = 0; i <= len1; i++) {
+    dp[i][0] = i;
+  }
+  for (let j = 0; j <= len2; j++) {
+    dp[0][j] = j;
+  }
+
+  for (let i = 1; i <= len1; i++) {
+    for (let j = 1; j <= len2; j++) {
+      if (str1[i - 1] === str2[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1];
+      } else {
+        dp[i][j] = Math.min(
+          dp[i - 1][j] + 1,      // deletion
+          dp[i][j - 1] + 1,      // insertion
+          dp[i - 1][j - 1] + 1   // substitution
+        );
+      }
+    }
+  }
+
+  return dp[len1][len2];
+}
+
+// Calculate similarity ratio between two strings (0 to 1, where 1 is identical)
+function similarityRatio(str1, str2) {
+  if (str1 === str2) return 1.0;
+  if (!str1 || !str2) return 0.0;
+
+  const distance = levenshteinDistance(str1, str2);
+  const maxLen = Math.max(str1.length, str2.length);
+
+  return 1 - (distance / maxLen);
+}
+
+// Group bounding boxes by line based on y-coordinate
+function groupBoundingBoxesByLine(boxes) {
+  if (!boxes || boxes.length === 0) return [];
+
+  const Y_SENSITIVITY = 10;
+  const sortedBoxes = [...boxes].sort((a, b) => {
+    const yDiff = a.y1 - b.y1;
+    if (Math.abs(yDiff) < Y_SENSITIVITY) {
+       // If y-coordinates are very close, sort by x
+      return a.x1 - b.x1;
+    }
+    return yDiff;
+  });
+
+  const lines = [];
+  let currentLine = [sortedBoxes[0]];
+  let currentLineY = sortedBoxes[0].y1;
+
+  // Words on the same line should have similar y-coordinates
+  for (let i = 1; i < sortedBoxes.length; i++) {
+    const box = sortedBoxes[i];
+    const yDiff = Math.abs(box.y1 - currentLineY);
+
+    if (yDiff < Y_SENSITIVITY) {
+      currentLine.push(box);
+    } else {
+      lines.push(currentLine);
+      currentLine = [box];
+      currentLineY = box.y1;
+    }
+  }
+
+  if (currentLine.length > 0) {
+    lines.push(currentLine);
+  }
+
+  return lines.map(lineBoxes => {
+    const text = lineBoxes.map(box => box.text).join(' ');
+    return {
+      text: text,
+      boxes: lineBoxes,
+    };
+  });
+}
 
 /* Initialize our image viewer. */
 function initializeImageViewer(imageURL) {
@@ -86,10 +193,25 @@ export default () => ({
   modalStatus: '',
   originalContent: '',
   changesPreview: '',
+  // Normalize modal
+  normalizeModalOpen: false,
+  normalizeReplaceColonVisarga: true,
+  normalizeReplaceSAvagraha: true,
+  normalizeReplaceDoublePipe: true,
+  // Transliterate modal
+  transliterateModalOpen: false,
+  // OCR bounding box highlighting
+  boundingBoxes: [],
+  boundingBoxLines: [],
+  currentOverlay: null,
 
   init() {
     this.loadSettings();
     this.layoutClasses = this.getLayoutClasses();
+
+    // OCR bounding boxes (rendered on OSD image viewer)
+    this.boundingBoxes = parseBoundingBoxes(OCR_BOUNDING_BOXES);
+    this.boundingBoxLines = groupBoundingBoxesByLine(this.boundingBoxes);
 
     // Initialize editor (either ProofingEditor or XMLView based on viewMode)
     const editorElement = $('#prosemirror-editor');
@@ -109,7 +231,9 @@ export default () => ({
       this.editor = new ProofingEditor(editorElement, initialContent, () => {
         this.hasUnsavedChanges = true;
         $('#content').value = Alpine.raw(this.editor).getText();
-      }, this.showAdvancedOptions);
+      }, this.showAdvancedOptions, this.textZoom, (context) => {
+        this.onActiveWordChange(context);
+      });
     }
 
     // Set `imageZoom` only after the viewer is fully initialized.
@@ -142,6 +266,8 @@ export default () => ({
       { label: 'View > Show image on right', action: () => this.displayImageOnRight() },
       { label: 'View > Show image on top', action: () => this.displayImageOnTop() },
       { label: 'View > Show image on bottom', action: () => this.displayImageOnBottom() },
+      { label: 'Tools > Normalize', action: () => this.openNormalizeModal() },
+      { label: 'Tools > Transliterate', action: () => this.openTransliterateModal() },
     ];
   },
 
@@ -157,9 +283,15 @@ export default () => ({
     this.commandPaletteOpen = true;
     this.commandPaletteQuery = '';
     this.commandPaletteSelected = 0;
+
     this.$nextTick(() => {
-      const input = document.querySelector('#command-palette-input');
-      if (input) input.focus();
+      // requestAnimationFrame ensures the browser has painted the modal
+      requestAnimationFrame(() => {
+        const input = document.querySelector('#command-palette-input');
+        if (input) {
+          input.focus();
+        }
+      });
     });
   },
 
@@ -218,6 +350,11 @@ export default () => ({
         this.fromScript = settings.fromScript || this.fromScript;
         this.toScript = settings.toScript || this.toScript;
         this.showAdvancedOptions = settings.showAdvancedOptions || this.showAdvancedOptions;
+
+        // Normalize preferences (default to true if not set)
+        this.normalizeReplaceColonVisarga = settings.normalizeReplaceColonVisarga !== undefined ? settings.normalizeReplaceColonVisarga : true;
+        this.normalizeReplaceSAvagraha = settings.normalizeReplaceSAvagraha !== undefined ? settings.normalizeReplaceSAvagraha : true;
+        this.normalizeReplaceDoublePipe = settings.normalizeReplaceDoublePipe !== undefined ? settings.normalizeReplaceDoublePipe : true;
       } catch (error) {
         // Old settings are invalid -- rewrite with valid values.
         this.saveSettings();
@@ -234,6 +371,9 @@ export default () => ({
       fromScript: this.fromScript,
       toScript: this.toScript,
       showAdvancedOptions: this.showAdvancedOptions,
+      normalizeReplaceColonVisarga: this.normalizeReplaceColonVisarga,
+      normalizeReplaceSAvagraha: this.normalizeReplaceSAvagraha,
+      normalizeReplaceDoublePipe: this.normalizeReplaceDoublePipe,
     };
     localStorage.setItem(CONFIG_KEY, JSON.stringify(settings));
   },
@@ -356,11 +496,18 @@ export default () => ({
   // Text zoom controls
 
   increaseTextSize() {
-    this.textZoom += 0.2;
+    this.textZoom += 0.1;
+    Alpine.raw(this.editor).setTextZoom(this.textZoom);
     this.saveSettings();
   },
   decreaseTextSize() {
-    this.textZoom = Math.max(0, this.textZoom - 0.2);
+    this.textZoom = Math.max(0.5, this.textZoom - 0.1);
+    Alpine.raw(this.editor).setTextZoom(this.textZoom);
+    this.saveSettings();
+  },
+  resetTextSize() {
+    this.textZoom = 1;
+    Alpine.raw(this.editor).setTextZoom(this.textZoom);
     this.saveSettings();
   },
 
@@ -409,7 +556,9 @@ export default () => ({
         this.editor = new ProofingEditor(editorElement, content, () => {
           this.hasUnsavedChanges = true;
           $('#content').value = Alpine.raw(this.editor).getText();
-        }, this.showAdvancedOptions);
+        }, this.showAdvancedOptions, this.textZoom, (context) => {
+          this.onActiveWordChange(context);
+        });
 
       } catch (error) {
         this.xmlParseError = `Invalid XML: ${error.message}`;
@@ -479,6 +628,51 @@ export default () => ({
 
   replaceSAvagraha() {
     this.changeSelectedText((s) => s.replaceAll('S', 'ऽ'));
+  },
+
+  openNormalizeModal() {
+    this.normalizeModalOpen = true;
+  },
+
+  closeNormalizeModal() {
+    this.normalizeModalOpen = false;
+  },
+
+  applyNormalization() {
+    this.changeSelectedText((text) => {
+      let normalized = text;
+
+      if (this.normalizeReplaceColonVisarga) {
+        normalized = normalized.replaceAll(':', 'ः');
+      }
+
+      if (this.normalizeReplaceSAvagraha) {
+        normalized = normalized.replaceAll('S', 'ऽ');
+      }
+
+      if (this.normalizeReplaceDoublePipe) {
+        normalized = normalized.replaceAll('||', '॥');
+      }
+
+      return normalized;
+    });
+
+    this.saveSettings();
+    this.closeNormalizeModal();
+  },
+
+  openTransliterateModal() {
+    this.transliterateModalOpen = true;
+  },
+
+  closeTransliterateModal() {
+    this.transliterateModalOpen = false;
+  },
+
+  applyTransliteration() {
+    this.changeSelectedText((s) => Sanscript.t(s, this.fromScript, this.toScript));
+    this.saveSettings();
+    this.closeTransliterateModal();
   },
 
   transliterateSelectedText() {
@@ -634,5 +828,140 @@ export default () => ({
   submitForm(e) {
     this.hasUnsavedChanges = false;
     e.target.submit();
+  },
+
+  // Bounding box highlighting
+  // ----------------------------------------------
+
+  onActiveWordChange(context) {
+    if (!context || !this.boundingBoxLines.length || !this.imageViewer) {
+      this.clearBoundingBoxHighlight();
+      return;
+    }
+
+    const matchedBox = this.findBestMatchingBoundingBox(context);
+    if (matchedBox) {
+      this.highlightBoundingBox(matchedBox);
+    } else {
+      this.clearBoundingBoxHighlight();
+    }
+  },
+
+  findBestMatchingBoundingBox(context) {
+    const LINE_FUZZY_THRESHOLD = 0.7;
+    const WORD_FUZZY_THRESHOLD = 0.7;
+
+    const { word, lineText, wordIndex } = context;
+
+    const normalizedWord = word.trim();
+    const normalizedLine = lineText.trim();
+    if (!normalizedWord || !normalizedLine) return null;
+
+    let bestLine = null;
+    let bestLineSimilarity = LINE_FUZZY_THRESHOLD;
+    for (const line of this.boundingBoxLines) {
+      const lineTextNormalized = line.text.toLowerCase().trim();
+      if (lineTextNormalized === normalizedLine) {
+        bestLine = line;
+        break;
+      }
+
+      const similarity = similarityRatio(normalizedLine, lineTextNormalized);
+      if (similarity > bestLineSimilarity) {
+        bestLineSimilarity = similarity;
+        bestLine = line;
+      }
+    }
+
+    if (!bestLine) {
+      return this.findBestMatchingBoundingBoxFallback(normalizedWord);
+    }
+
+    let bestWordBox = null;
+    let bestWordSimilarity = WORD_FUZZY_THRESHOLD;
+
+    for (const box of bestLine.boxes) {
+      const boxText = box.text.toLowerCase();
+
+      if (boxText === normalizedWord) {
+        return box;
+      }
+
+      const similarity = similarityRatio(normalizedWord, boxText);
+      if (similarity > bestWordSimilarity) {
+        bestWordSimilarity = similarity;
+        bestWordBox = box;
+      }
+    }
+
+    return bestWordBox;
+  },
+
+  // Fallback to old algorithm when line matching fails
+  findBestMatchingBoundingBoxFallback(normalizedWord) {
+    for (const box of this.boundingBoxes) {
+      if (box.text.toLowerCase() === normalizedWord) {
+        return box;
+      }
+    }
+
+    const FUZZY_THRESHOLD = 0.7;
+    let bestMatch = null;
+    let bestSimilarity = FUZZY_THRESHOLD;
+
+    for (const box of this.boundingBoxes) {
+      const boxText = box.text.toLowerCase();
+      const similarity = similarityRatio(normalizedWord, boxText);
+
+      if (similarity > bestSimilarity) {
+        bestSimilarity = similarity;
+        bestMatch = box;
+      }
+    }
+
+    return bestMatch;
+  },
+
+  highlightBoundingBox(box) {
+    this.clearBoundingBoxHighlight();
+
+    if (!this.imageViewer || !this.imageViewer.world.getItemAt(0)) {
+      return;
+    }
+
+    const tiledImage = this.imageViewer.world.getItemAt(0);
+    const imageSize = tiledImage.getContentSize();
+
+    // OpenSeadragon uses a coordinate system where the image width is normalized to 1.0
+    // and all other dimensions (including y-axis) are scaled relative to the width.
+    // This maintains the aspect ratio. So we divide ALL coordinates by image width.
+    const x = box.x1 / imageSize.x;
+    const y = box.y1 / imageSize.x;  // Note: dividing by width, not height
+    const width = (box.x2 - box.x1) / imageSize.x;
+    const height = (box.y2 - box.y1) / imageSize.x;  // Note: dividing by width, not height
+
+    const overlayElement = document.createElement('div');
+    overlayElement.className = 'ocr-bounding-box-highlight';
+    overlayElement.style.border = '1px solid red';
+    overlayElement.style.boxSizing = 'border-box';
+    overlayElement.style.pointerEvents = 'none';
+
+    this.imageViewer.addOverlay({
+      element: overlayElement,
+      location: new OpenSeadragon.Rect(x, y, width, height),
+    });
+
+    this.currentOverlay = overlayElement;
+  },
+
+  clearBoundingBoxHighlight() {
+    if (this.currentOverlay) {
+      try {
+        this.imageViewer.removeOverlay(this.currentOverlay);
+      } catch (e) {
+        console.debug('Failed to remove overlay:', e);
+      }
+      this.currentOverlay = null;
+    }
   },
 });

@@ -102,6 +102,82 @@ const marks: Record<string, MarkSpec> = Object.fromEntries(
 
 const customSchema = new Schema({ nodes, marks });
 
+// Extract the word at the cursor position along with line context
+function getWordAtCursor(state: EditorState): { word: string; lineText: string; wordIndex: number } | null {
+  const { $from } = state.selection;
+  const node = $from.parent;
+
+  if (node.type.name !== 'block') {
+    return null;
+  }
+
+  // Get the text content and cursor position within the block
+  let text = '';
+  let cursorOffset = $from.parentOffset;
+
+  node.forEach((child) => {
+    if (child.isText && child.text) {
+      text += child.text;
+    }
+  });
+
+  if (!text || cursorOffset > text.length) {
+    return null;
+  }
+
+  const beforeCursor = text.substring(0, cursorOffset);
+  const afterCursor = text.substring(cursorOffset);
+
+  let wordStart = beforeCursor.length;
+  for (let i = beforeCursor.length - 1; i >= 0; i--) {
+    if (/\s/.test(beforeCursor[i])) {
+      break;
+    }
+    wordStart = i;
+  }
+
+  let wordEnd = 0;
+  for (let i = 0; i < afterCursor.length; i++) {
+    if (/\s/.test(afterCursor[i])) {
+      break;
+    }
+    wordEnd = i + 1;
+  }
+
+  const word = beforeCursor.substring(wordStart) + afterCursor.substring(0, wordEnd);
+
+  if (!word.trim()) {
+    return null;
+  }
+
+  const wordsBeforeCursor = beforeCursor.substring(0, wordStart).split(/\s+/).filter(w => w.length > 0);
+  const wordIndex = wordsBeforeCursor.length;
+
+  return {
+    word: word.trim(),
+    lineText: text.trim(),
+    wordIndex: wordIndex,
+  };
+}
+
+// Plugin to track cursor changes and emit active word
+function activeWordPlugin(onActiveWordChange?: (context: { word: string; lineText: string; wordIndex: number } | null) => void) {
+  return new Plugin({
+    view() {
+      return {
+        update(view, prevState) {
+          if (!view.state.selection.eq(prevState.selection)) {
+            const context = getWordAtCursor(view.state);
+            if (onActiveWordChange) {
+              onActiveWordChange(context);
+            }
+          }
+        },
+      };
+    },
+  });
+}
+
 function createBlockBelow(state: EditorState, dispatch?: (tr: Transaction) => void): boolean {
   const { $from, $to } = state.selection;
   const currentBlock = $from.node($from.depth);
@@ -385,7 +461,8 @@ class BlockView {
 
     // Create content area
     this.contentDOM = document.createElement('div');
-    this.contentDOM.className = 'w-full text-base p-2 border border-slate-200 bg-white rounded font-normal min-h-[3rem] focus:outline-none focus:ring-2 focus:ring-blue-400 whitespace-pre-wrap';
+    this.contentDOM.className = 'w-full p-2 border border-slate-200 bg-white rounded font-normal min-h-[3rem] focus:outline-none focus:ring-2 focus:ring-blue-400 whitespace-pre-wrap';
+    this.contentDOM.style.fontSize = `${this.editor.textZoom}rem`;
     this.contentDOM.contentEditable = 'true';
     this.dom.appendChild(this.contentDOM);
   }
@@ -875,14 +952,18 @@ export default class {
   view: EditorView;
   schema: Schema;
   onChange?: () => void;
+  onActiveWordChange?: (context: { word: string; lineText: string; wordIndex: number } | null) => void;
   showAdvancedOptions: boolean;
   blockViews: Set<BlockView>;
+  textZoom: number;
 
-  constructor(element: HTMLElement, initialContent: string = '', onChange?: () => void, showAdvancedOptions: boolean = false) {
+  constructor(element: HTMLElement, initialContent: string = '', onChange?: () => void, showAdvancedOptions: boolean = false, textZoom: number = 1.0, onActiveWordChange?: (context: { word: string; lineText: string; wordIndex: number } | null) => void) {
     this.schema = customSchema;
     this.onChange = onChange;
+    this.onActiveWordChange = onActiveWordChange;
     this.showAdvancedOptions = showAdvancedOptions;
     this.blockViews = new Set();
+    this.textZoom = textZoom;
 
     let doc;
     try {
@@ -897,6 +978,7 @@ export default class {
         history(),
         keymap({ 'Mod-z': pmUndo, 'Mod-y': pmRedo, 'Shift-Enter': createBlockBelow }),
         keymap(baseKeymap),
+        activeWordPlugin(this.onActiveWordChange),
       ],
     });
 
@@ -1166,9 +1248,16 @@ export default class {
   setShowAdvancedOptions(show: boolean) {
     this.showAdvancedOptions = show;
 
-    // Update all existing BlockViews
     this.blockViews.forEach(blockView => {
       blockView.updateAdvancedOptionsVisibility();
+    });
+  }
+
+  setTextZoom(zoom: number) {
+    this.textZoom = zoom;
+
+    this.blockViews.forEach(blockView => {
+      blockView.contentDOM.style.fontSize = `${zoom}rem`;
     });
   }
 
