@@ -162,15 +162,23 @@ def export_text(text_slug):
 
 
 async def _upload_page_async(
-    idx, page, project, s3_bucket, upload_folder, total_pages, dry_run, semaphore
+    idx, page_data, s3_bucket, upload_folder, total_pages, dry_run, semaphore
 ):
-    """Upload a single page image to S3 (async)."""
+    """Upload a single page image to S3 (async).
+
+    Args:
+        page_data: Dict with keys: project_slug, page_slug, page_uuid
+    """
     async with semaphore:
+        project_slug = page_data["project_slug"]
+        page_slug = page_data["page_slug"]
+        page_uuid = page_data["page_uuid"]
+
         # Run blocking I/O operations in thread pool
         local_path = await asyncio.to_thread(
             get_page_image_filepath,
-            project_slug=project.slug,
-            page_slug=page.slug,
+            project_slug=project_slug,
+            page_slug=page_slug,
             upload_folder=upload_folder,
         )
 
@@ -179,11 +187,11 @@ async def _upload_page_async(
         if not exists:
             return (
                 "skipped_missing",
-                f"[{idx}/{total_pages}] Skipping {project.slug}/{page.slug} - file not found locally",
+                f"[{idx}/{total_pages}] Skipping {project_slug}/{page_slug} - file not found locally",
             )
 
         # Build S3 path
-        s3_key = f"assets/pages/{page.uuid}.jpg"
+        s3_key = f"assets/pages/{page_uuid}.jpg"
         s3_path = S3Path(bucket=s3_bucket, key=s3_key)
 
         # Check if already exists in S3
@@ -191,7 +199,7 @@ async def _upload_page_async(
         if s3_exists:
             return (
                 "skipped_exists",
-                f"[{idx}/{total_pages}] Skipping {project.slug}/{page.slug} - already exists in S3",
+                f"[{idx}/{total_pages}] Skipping {project_slug}/{page_slug} - already exists in S3",
             )
 
         if dry_run:
@@ -205,18 +213,24 @@ async def _upload_page_async(
                 await asyncio.to_thread(s3_path.upload_file, local_path)
                 return (
                     "uploaded",
-                    f"[{idx}/{total_pages}] Uploaded {project.slug}/{page.slug} -> {s3_path}",
+                    f"[{idx}/{total_pages}] Uploaded {project_slug}/{page_slug} -> {s3_path}",
                 )
             except Exception as e:
                 return (
                     "error",
-                    f"[{idx}/{total_pages}] ERROR uploading {project.slug}/{page.slug}: {e}",
+                    f"[{idx}/{total_pages}] ERROR uploading {project_slug}/{page_slug}: {e}",
                 )
 
 
-async def _upload_all_pages_async(results, s3_bucket, upload_folder, dry_run, workers):
-    """Process all page uploads concurrently."""
-    total_pages = len(results)
+async def _upload_all_pages_async(
+    page_data_list, s3_bucket, upload_folder, dry_run, workers
+):
+    """Process all page uploads concurrently.
+
+    Args:
+        page_data_list: List of dicts with page data (already extracted from DB objects)
+    """
+    total_pages = len(page_data_list)
 
     # Counters (no locks needed - asyncio is single-threaded)
     uploaded = 0
@@ -231,15 +245,14 @@ async def _upload_all_pages_async(results, s3_bucket, upload_folder, dry_run, wo
     tasks = [
         _upload_page_async(
             idx,
-            page,
-            project,
+            page_data,
             s3_bucket,
             upload_folder,
             total_pages,
             dry_run,
             semaphore,
         )
-        for idx, (page, project) in enumerate(results, 1)
+        for idx, page_data in enumerate(page_data_list, 1)
     ]
 
     # Process tasks as they complete
@@ -302,6 +315,7 @@ def upload_page_images(dry_run, workers):
         if not upload_folder:
             raise click.ClickException("UPLOAD_FOLDER not configured in environment")
 
+        # Extract page data from database while session is open
         with Session(engine) as session:
             # Get all pages along with their project information
             stmt = select(db.Page, db.Project).join(
@@ -313,35 +327,46 @@ def upload_page_images(dry_run, workers):
                 click.echo("No pages found in the database.")
                 return
 
-            total_pages = len(results)
+            # Extract data we need before closing session
+            # This avoids SQLAlchemy DetachedInstanceError in async code
+            page_data_list = [
+                {
+                    "project_slug": project.slug,
+                    "page_slug": page.slug,
+                    "page_uuid": page.uuid,
+                }
+                for page, project in results
+            ]
 
-            click.echo(f"Found {total_pages} pages to process.")
-            if dry_run:
-                click.echo("DRY RUN MODE - No files will be uploaded")
-            click.echo(f"Using {workers} concurrent uploads")
-            click.echo()
+        total_pages = len(page_data_list)
 
-            # Run async upload process
-            uploaded, skipped_missing, skipped_exists, errors = asyncio.run(
-                _upload_all_pages_async(
-                    results, s3_bucket, upload_folder, dry_run, workers
-                )
+        click.echo(f"Found {total_pages} pages to process.")
+        if dry_run:
+            click.echo("DRY RUN MODE - No files will be uploaded")
+        click.echo(f"Using {workers} concurrent uploads")
+        click.echo()
+
+        # Run async upload process
+        uploaded, skipped_missing, skipped_exists, errors = asyncio.run(
+            _upload_all_pages_async(
+                page_data_list, s3_bucket, upload_folder, dry_run, workers
             )
+        )
 
-            # Summary
-            click.echo()
-            click.echo("=" * 50)
-            click.echo("Summary:")
-            click.echo(f"  Total pages: {total_pages}")
-            if dry_run:
-                click.echo(f"  Would upload: {uploaded}")
-            else:
-                click.echo(f"  Uploaded: {uploaded}")
-            click.echo(f"  Skipped (missing locally): {skipped_missing}")
-            click.echo(f"  Skipped (already in S3): {skipped_exists}")
-            if errors > 0:
-                click.echo(f"  Errors: {errors}")
-            click.echo("=" * 50)
+        # Summary
+        click.echo()
+        click.echo("=" * 50)
+        click.echo("Summary:")
+        click.echo(f"  Total pages: {total_pages}")
+        if dry_run:
+            click.echo(f"  Would upload: {uploaded}")
+        else:
+            click.echo(f"  Uploaded: {uploaded}")
+        click.echo(f"  Skipped (missing locally): {skipped_missing}")
+        click.echo(f"  Skipped (already in S3): {skipped_exists}")
+        if errors > 0:
+            click.echo(f"  Errors: {errors}")
+        click.echo("=" * 50)
 
 
 if __name__ == "__main__":
