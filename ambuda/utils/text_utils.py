@@ -2,17 +2,17 @@ import dataclasses as dc
 
 from vidyut.lipi import transliterate, Scheme
 
+import ambuda.database as db
 from ambuda import queries as q
-from ambuda.database import Text, Genre, Author
 
 
 @dc.dataclass
 class TextEntry:
-    text: Text
+    text: db.Text
     children: list["TextEntry"]
 
-    genre: Genre | None
-    author: Author | None
+    genre: db.Genre | None
+    author: db.Author | None
 
 
 def create_text_entries() -> list[TextEntry]:
@@ -61,3 +61,28 @@ def create_text_entries() -> list[TextEntry]:
             pass
 
     return text_entries
+
+
+def create_grouped_text_entries() -> dict[str, list[TextEntry]]:
+    _d = lambda x: transliterate(x, Scheme.HarvardKyoto, Scheme.Devanagari)
+
+    headings = {
+        _d("upaniSat"): _d("vedAH"),
+        _d("itihAsaH"): _d("itihAsau"),
+        _d("kAvyam"): _d("kAvyAni"),
+        _d("stotram"): _d("stotrANi"),
+    }
+
+    grouped_entries = {}
+    for heading in headings.values():
+        grouped_entries[heading] = []
+    grouped_entries[_d("anye granthAH")] = []
+
+    for entry in create_text_entries():
+        heading = None
+        if entry.genre:
+            heading = headings.get(entry.genre.name)
+        if heading is None:
+            heading = _d("anye granthAH")
+        grouped_entries[heading].append(entry)
+    return grouped_entries

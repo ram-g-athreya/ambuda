@@ -1,18 +1,16 @@
 {# List of all texts #}
 {% macro all_texts(text_entries) %}
-<ul class="mb-24">
+<ul>
 {% for entry in text_entries %}
 <li class="even:bg-slate-50 p-2">
   <h2>
     {% set url = url_for('texts.text', slug=entry.text.slug) %}
-    <a href="{{ url }}" class="hover:underline">
+    <a href="{{ url }}" class="hover:underline flex justify-between">
       <span class="text-xl">{{ entry.text.title | devanagari }}</span>
 
       {% if entry.author or entry.genre %}
       <span class="text-slate-500">
-        &mdash;
         {% if entry.author %} {{ entry.author.name }} {% endif %}
-        {% if entry.genre %} ({{ entry.genre.name }}) {% endif %}
       </span>
       {% endif %}
      </a>
@@ -35,4 +33,14 @@
 </li>
 {% endfor %}
 </ul>
+{% endmacro %}
+
+
+{% macro grouped_texts(grouped_entries) %}
+  {% for heading, entries in grouped_entries.items() %}
+    {% if entries %}
+    <h2 class="text-slate-400 font-bold text-3xl my-8">{{ heading }}</h2>
+    {{ all_texts(entries) }}
+    {% endif %}
+  {% endfor %}
 {% endmacro %}

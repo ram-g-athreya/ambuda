@@ -90,6 +90,9 @@ class Text(Base):
     # DEPRECATED parse data
     block_parses = relationship("BlockParse", backref="text")
 
+    def __repr__(self) -> str:
+        return f"Text(slug={self.slug})"
+
     def __str__(self) -> str:
         return self.slug
 

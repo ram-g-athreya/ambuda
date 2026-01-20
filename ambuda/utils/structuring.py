@@ -785,6 +785,11 @@ def create_tei_document(
         tei_xml = copy.deepcopy(proof_xml)
         _rewrite_block_to_tei_xml(tei_xml, block.image_number)
 
+        # TODO:
+        # <lg> inheriting from previous n <-- should add +1
+        # <sp><lg> <-- should be numbered
+        # merge-next should merge into next of same type
+
         # Assign "n" to all blocks so that they have unique names (for translations, etc.)
         n = proof_xml.attrib.get("n")
         if tei_xml.tag in {"note"}:

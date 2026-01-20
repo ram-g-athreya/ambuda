@@ -24,7 +24,7 @@
 
 
 {% block main %}
-<article class="px-8 mx-auto max-w-3xl">
+<article class="px-8 mx-auto max-w-3xl md:mb-36">
   <header class="text-center text-sky-900 font-bold my-12">
     <p class="text-sm">{{ '|| zrIH ||' | devanagari }}</p>
     <h1 class="text-6xl">{{ 'ambudaH' | devanagari }}</h1>
@@ -41,6 +41,6 @@
     </ul>
   </nav>
 
-  {{ m.all_texts(text_entries) }}
+  {{ m.grouped_texts(grouped_entries) }}
 </article>
 {% endblock %}

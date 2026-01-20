@@ -89,8 +89,8 @@ def _hk_to_dev(s: str) -> str:
 def index():
     """Show all texts."""
 
-    text_entries = text_utils.create_text_entries()
-    return render_template("texts/index.html", text_entries=text_entries)
+    grouped_entries = text_utils.create_grouped_text_entries()
+    return render_template("texts/index.html", grouped_entries=grouped_entries)
 
 
 @bp.route("/<slug>/")
