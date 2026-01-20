@@ -37,11 +37,18 @@
           <div class="border border-slate-300 rounded p-4 mb-4 bg-white">
             <div class="flex justify-between items-start mb-3">
               <h4 class="font-medium text-slate-700" x-text="'Config ' + (index + 1)"></h4>
-              <button type="button"
-                      @click="removePublishEntry(index)"
-                      class="text-red-600 hover:text-red-800 text-sm">
-                Remove
-              </button>
+              <div class="flex gap-2">
+                <a :href="entry.slug ? '{{ url_for('proofing.project.publish_preview', slug=project.slug) }}?text_slug=' + entry.slug : '#'"
+                   :class="entry.slug ? 'btn btn-basic text-sm' : 'btn btn-basic text-sm opacity-50 cursor-not-allowed'"
+                   :disabled="!entry.slug">
+                  Preview
+                </a>
+                <button type="button"
+                        @click="removePublishEntry(index)"
+                        class="text-red-600 hover:text-red-800 text-sm">
+                  Remove
+                </button>
+              </div>
             </div>
 
             <div class="grid grid-cols-2 gap-4">
@@ -52,7 +59,25 @@
                     <span x-show="field.required" class="text-red-500">*</span>
                   </label>
 
-                  <template x-if="field.type === 'string' && !field.enum">
+                  <template x-if="field.name === 'author'">
+                    <input type="text"
+                           x-model="entry[field.name]"
+                           :required="field.required"
+                           :placeholder="field.placeholder"
+                           list="authors-datalist"
+                           class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+                  </template>
+
+                  <template x-if="field.name === 'genre'">
+                    <input type="text"
+                           x-model="entry[field.name]"
+                           :required="field.required"
+                           :placeholder="field.placeholder"
+                           list="genres-datalist"
+                           class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+                  </template>
+
+                  <template x-if="field.type === 'string' && !field.enum && field.name !== 'author' && field.name !== 'genre'">
                     <input type="text"
                            x-model="entry[field.name]"
                            :required="field.required"
@@ -99,7 +124,7 @@
 
       <div class="flex gap-3 items-center">
         <button type="submit" class="btn btn-submit">
-          Preview Changes
+          Save Configuration
         </button>
         <button type="button"
                 @click="showJSON = !showJSON"
@@ -119,6 +144,19 @@
              x-text="generateJSON()"></pre>
       </div>
     </form>
+
+    {# HTML5 datalists for autocomplete #}
+    <datalist id="authors-datalist">
+      {% for author in authors %}
+        <option value="{{ author.name }}">
+      {% endfor %}
+    </datalist>
+
+    <datalist id="genres-datalist">
+      {% for genre in genres %}
+        <option value="{{ genre.name }}">
+      {% endfor %}
+    </datalist>
   </div>
 </div>
 
@@ -167,37 +205,45 @@ function publishConfig() {
       const required = schema.required || [];
 
       const fieldMetadata = {
-        slug: { placeholder: 'e.g., ramayana', description: 'Unique identifier for the text' },
         title: { placeholder: 'e.g., Rāmāyaṇa', description: 'Display title for the text' },
+        slug: { placeholder: 'e.g., ramayana', description: 'Unique identifier for the text' },
         target: { placeholder: 'e.g., text1', description: 'Target text field from structuring' },
         author: { placeholder: 'e.g., Vālmīki', description: 'Author of the work' },
-        language: { placeholder: '', description: 'Primary language of the text' }
+        genre: { placeholder: 'e.g., Kāvya', description: 'Genre of the text' },
+        language: { placeholder: '', description: 'Primary language of the text' },
+        parent_slug: { placeholder: 'e.g., ramayana', description: 'Slug of the parent text (for translations/commentaries)' }
       };
 
-      this.fields = Object.entries(properties).map(([name, prop]) => {
-        let type = prop.type;
-        let enumValues = prop.enum;
+      // Define field order explicitly
+      const fieldOrder = ['title', 'slug', 'target', 'author', 'genre', 'language', 'parent_slug'];
 
-        if (prop.anyOf) {
-          const nonNullType = prop.anyOf.find(t => t.type !== 'null');
-          if (nonNullType) {
-            type = nonNullType.type;
-            enumValues = nonNullType.enum;
+      this.fields = fieldOrder
+        .filter(name => properties[name])
+        .map(name => {
+          const prop = properties[name];
+          let type = prop.type;
+          let enumValues = prop.enum;
+
+          if (prop.anyOf) {
+            const nonNullType = prop.anyOf.find(t => t.type !== 'null');
+            if (nonNullType) {
+              type = nonNullType.type;
+              enumValues = nonNullType.enum;
+            }
           }
-        }
 
-        const meta = fieldMetadata[name] || {};
+          const meta = fieldMetadata[name] || {};
 
-        return {
-          name: name,
-          label: this.titleCase(name),
-          type: type,
-          required: required.includes(name),
-          enum: enumValues,
-          placeholder: meta.placeholder || '',
-          description: prop.description || meta.description || ''
-        };
-      });
+          return {
+            name: name,
+            label: this.titleCase(name),
+            type: type,
+            required: required.includes(name),
+            enum: enumValues,
+            placeholder: meta.placeholder || '',
+            description: prop.description || meta.description || ''
+          };
+        });
     },
 
     titleCase(str) {

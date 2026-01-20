@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from xml.etree import ElementTree as ET
 
 from celery.result import GroupResult
+from slugify import slugify
 from flask import (
     Blueprint,
     current_app,
@@ -993,8 +994,11 @@ def publish_config(slug):
             session = q.get_session()
             project_.config = new_config.model_dump_json()
             session.commit()
+            flash("Configuration saved successfully.", "success")
+        else:
+            flash("No changes to save.", "info")
 
-        return redirect(url_for("proofing.project.publish_preview", slug=slug))
+        return redirect(url_for("proofing.project.publish_config", slug=slug))
 
     try:
         project_config = ProjectConfig.model_validate_json(project_.config or "{}")
@@ -1005,18 +1009,29 @@ def publish_config(slug):
     publish_config = project_config.model_dump_json(indent=2)
     publish_config_schema = PublishConfig.model_json_schema()
 
+    # Get all genres and authors for datalist
+    session = q.get_session()
+    genres = (
+        session.execute(sqla.select(db.Genre).order_by(db.Genre.name)).scalars().all()
+    )
+    authors = (
+        session.execute(sqla.select(db.Author).order_by(db.Author.name)).scalars().all()
+    )
+
     return render_template(
         "proofing/projects/publish.html",
         project=project_,
         publish_config=publish_config,
         publish_config_schema=publish_config_schema,
+        genres=genres,
+        authors=authors,
     )
 
 
 @bp.route("/<slug>/publish/preview", methods=["GET"])
 @p2_required
 def publish_preview(slug):
-    """Preview the changes that will be made when publishing."""
+    """Preview the changes that will be made when publishing a single text."""
     project_ = q.project(slug)
     if project_ is None:
         abort(404)
@@ -1037,95 +1052,89 @@ def publish_preview(slug):
         flash("No publish configuration found. Please configure first.", "error")
         return config_page()
 
+    text_slug = request.args.get("text_slug")
+    if not text_slug:
+        flash("No text slug provided for preview.", "error")
+        return config_page()
+
+    config = next((c for c in project_config.publish if c.slug == text_slug), None)
+    if not config:
+        flash(f"No publish configuration found for text '{text_slug}'.", "error")
+        return config_page()
+
     session = q.get_session()
-    previews = []
 
-    text_slugs = [config.slug for config in project_config.publish]
-    existing_texts = (
-        session.execute(sqla.select(db.Text).where(db.Text.slug.in_(text_slugs)))
-        .scalars()
-        .all()
-    )
-    text_map = {text.slug: text for text in existing_texts}
-    text_ids = [text.id for text in existing_texts]
+    existing_text = session.execute(
+        sqla.select(db.Text).where(db.Text.slug == text_slug)
+    ).scalar_one_or_none()
 
-    blocks_by_text = {}
-    if text_ids:
-        existing_blocks_query = (
+    existing_blocks = []
+    if existing_text:
+        existing_blocks = (
             session.execute(
                 sqla.select(db.TextBlock)
-                .where(db.TextBlock.text_id.in_(text_ids))
-                .order_by(db.TextBlock.text_id, db.TextBlock.n)
+                .where(db.TextBlock.text_id == existing_text.id)
+                .order_by(db.TextBlock.n)
             )
             .scalars()
             .all()
         )
-        for block in existing_blocks_query:
-            blocks_by_text.setdefault(block.text_id, []).append(block)
 
-    for config in project_config.publish:
-        existing_text = text_map.get(config.slug)
-        document = _create_tei_document(project_, config.target or "()")
+    document = _create_tei_document(project_, config.target or "()")
+    new_blocks = [b.xml for section in document.sections for b in section.blocks]
 
-        new_blocks = [b.xml for section in document.sections for b in section.blocks]
-        existing_blocks = []
-        if existing_text:
-            existing_blocks = blocks_by_text.get(existing_text.id, [])
+    diffs = []
+    max_len = max(len(new_blocks), len(existing_blocks))
+    for i in range(max_len):
+        old_xml = existing_blocks[i].xml if i < len(existing_blocks) else None
+        new_xml = new_blocks[i] if i < len(new_blocks) else None
 
-        diffs = []
-        max_len = max(len(new_blocks), len(existing_blocks))
-        for i in range(max_len):
-            old_xml = existing_blocks[i].xml if i < len(existing_blocks) else None
-            new_xml = new_blocks[i] if i < len(new_blocks) else None
+        if old_xml is None and new_xml is not None:
+            x = ET.fromstring(new_xml)
+            ET.indent(x, "  ")
+            new_xml = ET.tostring(x, encoding="unicode")
+            diffs.append(
+                {
+                    "type": "added",
+                    "diff": new_xml,
+                }
+            )
+        elif old_xml is not None and new_xml is None:
+            diffs.append(
+                {
+                    "type": "removed",
+                    "diff": old_xml,
+                }
+            )
+        elif old_xml != new_xml:
+            diffs.append(
+                {
+                    "type": "changed",
+                    "diff": diff_utils.revision_diff(old_xml, new_xml),
+                }
+            )
 
-            if old_xml is None and new_xml is not None:
-                x = ET.fromstring(new_xml)
-                ET.indent(x, "  ")
-                new_xml = ET.tostring(x, encoding="unicode")
-                diffs.append(
-                    {
-                        "type": "added",
-                        "diff": new_xml,
-                    }
-                )
-            elif old_xml is not None and new_xml is None:
-                diffs.append(
-                    {
-                        "type": "removed",
-                        "diff": old_xml,
-                    }
-                )
-            elif old_xml != new_xml:
-                diffs.append(
-                    {
-                        "type": "changed",
-                        "diff": diff_utils.revision_diff(old_xml, new_xml),
-                    }
-                )
+    parent_info = None
+    if config.parent_slug:
+        parent_text = session.execute(
+            sqla.select(db.Text).where(db.Text.slug == config.parent_slug)
+        ).scalar_one_or_none()
+        if parent_text:
+            parent_info = {"slug": parent_text.slug, "title": parent_text.title}
 
-        parent_info = None
-        if config.parent_slug:
-            parent_text = session.execute(
-                sqla.select(db.Text).where(db.Text.slug == config.parent_slug)
-            ).scalar_one_or_none()
-            if parent_text:
-                parent_info = {"slug": parent_text.slug, "title": parent_text.title}
-
-        preview = {
-            "slug": config.slug,
-            "title": config.title,
-            "target": config.target,
-            "is_new": existing_text is None,
-            "parent": parent_info,
-            "diffs": diffs,
-        }
-
-        previews.append(preview)
+    preview = {
+        "slug": config.slug,
+        "title": config.title,
+        "target": config.target,
+        "is_new": existing_text is None,
+        "parent": parent_info,
+        "diffs": diffs,
+    }
 
     return render_template(
         "proofing/projects/publish-preview.html",
         project=project_,
-        previews=previews,
+        previews=[preview],  # Keep as list for template compatibility
     )
 
 
@@ -1192,6 +1201,30 @@ def publish_create(slug):
         text.project_id = project_.id
         text.language = config.language
         text.title = config.title
+
+        if config.author:
+            author = session.execute(
+                sqla.select(db.Author).where(db.Author.name == config.author)
+            ).scalar_one_or_none()
+            if not author:
+                author = db.Author(name=config.author, slug=slugify(config.author))
+                session.add(author)
+                session.flush()
+            text.author_id = author.id
+        else:
+            text.author_id = None
+
+        if config.genre:
+            genre = session.execute(
+                sqla.select(db.Genre).where(db.Genre.name == config.genre)
+            ).scalar_one_or_none()
+            if not genre:
+                genre = db.Genre(name=config.genre)
+                session.add(genre)
+                session.flush()
+            text.genre_id = genre.id
+        else:
+            text.genre_id = None
 
         existing_sections = {s.slug for s in text.sections}
         doc_sections = {s.slug for s in document.sections}
