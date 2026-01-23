@@ -16,6 +16,10 @@ export default {
 
   parseData: (textSlug, blockSlug) => `/api/parses/${textSlug}/${blockSlug}`,
 
+  publishProjectText: (projectSlug, textSlug) => `/proofing/${projectSlug}/publish/${textSlug}/preview`,
+
+  proofingAutoStructure: () => `/api/proofing/auto-structure`,
+
   // TODO: where to put this?
   getTextSlug: () => {
     const { pathname } = window.location;

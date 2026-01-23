@@ -43,7 +43,9 @@ from wtforms_sqlalchemy.fields import QuerySelectField
 import ambuda.utils.structuring as structuring_utils
 from ambuda import database as db
 from ambuda import queries as q
+from ambuda.enums import SitePageStatus
 from ambuda.models.proofing import ProjectStatus, PublishConfig, ProjectConfig
+from ambuda.models.texts import TextStatus
 from ambuda.tasks import app as celery_app
 from ambuda.tasks import llm_structuring as llm_structuring_tasks
 from ambuda.tasks import ocr as ocr_tasks
@@ -1006,7 +1008,7 @@ def publish_config(slug):
         flash("Project config is invalid. Please contact an admin user.", "error")
         return redirect(url_for("proofing.index"))
 
-    publish_config = project_config.model_dump_json(indent=2)
+    publish_config = project_config.model_dump()
     publish_config_schema = PublishConfig.model_json_schema()
 
     # Get all genres and authors for datalist
@@ -1028,17 +1030,17 @@ def publish_config(slug):
     )
 
 
-@bp.route("/<slug>/publish/preview", methods=["GET"])
+@bp.route("/<project_slug>/publish/<text_slug>/preview", methods=["GET"])
 @p2_required
-def publish_preview(slug):
+def publish_preview(project_slug, text_slug):
     """Preview the changes that will be made when publishing a single text."""
-    project_ = q.project(slug)
+    project_ = q.project(project_slug)
     if project_ is None:
         abort(404)
 
     assert project_
     config_page = lambda: redirect(
-        url_for("proofing.project.publish_config", slug=slug)
+        url_for("proofing.project.publish_config", slug=project_slug)
     )
     if not project_.config:
         flash("No publish configuration found. Please configure first.", "error")
@@ -1050,11 +1052,6 @@ def publish_preview(slug):
         return config_page()
     if not project_config.publish:
         flash("No publish configuration found. Please configure first.", "error")
-        return config_page()
-
-    text_slug = request.args.get("text_slug")
-    if not text_slug:
-        flash("No text slug provided for preview.", "error")
         return config_page()
 
     config = next((c for c in project_config.publish if c.slug == text_slug), None)
@@ -1080,7 +1077,7 @@ def publish_preview(slug):
             .all()
         )
 
-    document = _create_tei_document(project_, config.target or "()")
+    document, _ = _create_tei_document(project_, config.target or "()")
     new_blocks = [b.xml for section in document.sections for b in section.blocks]
 
     diffs = []
@@ -1134,12 +1131,17 @@ def publish_preview(slug):
     return render_template(
         "proofing/projects/publish-preview.html",
         project=project_,
+        text_slug=text_slug,
         previews=[preview],  # Keep as list for template compatibility
     )
 
 
-def _create_tei_document(project_, target: str) -> TEIDocument:
-    """Gather content blocks from all pages for a specific target."""
+def _create_tei_document(project_, target: str) -> tuple[TEIDocument, set[str]]:
+    """Gather content blocks from all pages for a specific target.
+
+    Returns:
+        A tuple of (TEIDocument, set of page statuses).
+    """
     revisions = []
     for page in project_.pages:
         if not page.revisions:
@@ -1149,32 +1151,37 @@ def _create_tei_document(project_, target: str) -> TEIDocument:
 
     rules = project_utils.parse_page_number_spec(project_.page_numbers)
     page_numbers = project_utils.apply_rules(len(project_.pages), rules)
-    doc, _errors = structuring_utils.create_tei_document(
+    doc, _errors, page_statuses = structuring_utils.create_tei_document(
         revisions=revisions,
         page_numbers=page_numbers,
         target=target,
     )
-    return doc
+    return doc, page_statuses
 
 
-@bp.route("/<slug>/publish/create", methods=["POST"])
+@bp.route("/<project_slug>/publish/<text_slug>/create", methods=["POST"])
 @p2_required
-def publish_create(slug):
+def publish_create(project_slug, text_slug):
     """Create or update texts based on the publish configuration."""
-    project_ = q.project(slug)
+    config_page = lambda: redirect(
+        url_for("proofing.project.publish_config", slug=project_slug)
+    )
+
+    project_ = q.project(project_slug)
     if project_ is None:
         abort(404)
-
     assert project_
-    lambda config_page: redirect(url_for("proofing.project.publish_config", slug=slug))
     if not project_.config:
         flash("No publish configuration found. Please configure first.", "error")
         return config_page()
-
     try:
         project_config = ProjectConfig.model_validate_json(project_.config)
     except Exception:
         flash("Could not validate project config.", "error")
+        return config_page()
+    config = next((c for c in project_config.publish if c.slug == text_slug), None)
+    if not config:
+        flash(f"No publish configuration found for text '{text_slug}'.", "error")
         return config_page()
 
     session = q.get_session()
@@ -1182,173 +1189,169 @@ def publish_create(slug):
     updated_count = 0
     texts_map = {}
 
-    for config in project_config.publish:
-        document = _create_tei_document(project_, config.target)
+    document, page_statuses = _create_tei_document(project_, config.target)
 
-        text = q.text(config.slug)
-        is_new_text = False
-        if not text:
-            text = db.Text(
-                slug=config.slug,
-                title=config.title,
-                published_at=datetime.now(UTC),
-                project_id=project_.id,
+    text = q.text(config.slug)
+    is_new_text = False
+    if not text:
+        text = db.Text(
+            slug=config.slug,
+            title=config.title,
+            published_at=datetime.now(UTC),
+            project_id=project_.id,
+        )
+        session.add(text)
+        session.flush()
+        is_new_text = True
+
+    text.project_id = project_.id
+    text.language = config.language
+    text.title = config.title
+
+    if config.author:
+        author = session.execute(
+            sqla.select(db.Author).where(db.Author.name == config.author)
+        ).scalar_one_or_none()
+        if not author:
+            author = db.Author(name=config.author, slug=slugify(config.author))
+            session.add(author)
+            session.flush()
+        text.author_id = author.id
+    else:
+        text.author_id = None
+
+    if config.genre:
+        genre = session.execute(
+            sqla.select(db.Genre).where(db.Genre.name == config.genre)
+        ).scalar_one_or_none()
+        if not genre:
+            genre = db.Genre(name=config.genre)
+            session.add(genre)
+            session.flush()
+        text.genre_id = genre.id
+    else:
+        text.genre_id = None
+
+    if SitePageStatus.R0.value in page_statuses:
+        text.status = TextStatus.P0
+    elif SitePageStatus.R1.value in page_statuses:
+        text.status = TextStatus.P1
+    else:
+        text.status = TextStatus.P2
+
+    existing_sections = {s.slug for s in text.sections}
+    doc_sections = {s.slug for s in document.sections}
+    section_map = {s.slug: s for s in text.sections}
+
+    if existing_sections != doc_sections:
+        new_sections = doc_sections - existing_sections
+        old_sections = existing_sections - doc_sections
+
+        for old_slug in old_sections:
+            old_section = next((s for s in text.sections if s.slug == old_slug), None)
+            if old_section:
+                session.delete(old_section)
+                del section_map[old_slug]
+
+        for new_slug in new_sections:
+            doc_section = next(
+                (s for s in document.sections if s.slug == new_slug), None
             )
-            session.add(text)
-            session.flush()
-            is_new_text = True
-
-        text.project_id = project_.id
-        text.language = config.language
-        text.title = config.title
-
-        if config.author:
-            author = session.execute(
-                sqla.select(db.Author).where(db.Author.name == config.author)
-            ).scalar_one_or_none()
-            if not author:
-                author = db.Author(name=config.author, slug=slugify(config.author))
-                session.add(author)
-                session.flush()
-            text.author_id = author.id
-        else:
-            text.author_id = None
-
-        if config.genre:
-            genre = session.execute(
-                sqla.select(db.Genre).where(db.Genre.name == config.genre)
-            ).scalar_one_or_none()
-            if not genre:
-                genre = db.Genre(name=config.genre)
-                session.add(genre)
-                session.flush()
-            text.genre_id = genre.id
-        else:
-            text.genre_id = None
-
-        existing_sections = {s.slug for s in text.sections}
-        doc_sections = {s.slug for s in document.sections}
-        section_map = {s.slug: s for s in text.sections}
-
-        if existing_sections != doc_sections:
-            new_sections = doc_sections - existing_sections
-            old_sections = existing_sections - doc_sections
-
-            for old_slug in old_sections:
-                old_section = next(
-                    (s for s in text.sections if s.slug == old_slug), None
+            if doc_section:
+                new_section = db.TextSection(
+                    text_id=text.id,
+                    slug=new_slug,
+                    title=new_slug,
                 )
-                if old_section:
-                    session.delete(old_section)
-                    del section_map[old_slug]
+                session.add(new_section)
+                section_map[new_slug] = new_section
 
-            for new_slug in new_sections:
-                doc_section = next(
-                    (s for s in document.sections if s.slug == new_slug), None
+        session.flush()
+
+    existing_blocks = {
+        b.slug
+        for b in session.execute(
+            sqla.select(db.TextBlock).where(db.TextBlock.text_id == text.id)
+        )
+        .scalars()
+        .all()
+    }
+    doc_blocks = {b.slug for s in document.sections for b in s.blocks}
+
+    if existing_blocks != doc_blocks:
+        old_blocks = existing_blocks - doc_blocks
+        new_blocks = doc_blocks - existing_blocks
+
+        if old_blocks:
+            session.execute(
+                sqla.delete(db.TextBlock).where(
+                    db.TextBlock.text_id == text.id,
+                    db.TextBlock.slug.in_(old_blocks),
                 )
-                if doc_section:
-                    new_section = db.TextSection(
-                        text_id=text.id,
-                        slug=new_slug,
-                        title=new_slug,
-                    )
-                    session.add(new_section)
-                    section_map[new_slug] = new_section
+            )
 
-            session.flush()
+        existing_blocks = existing_blocks - old_blocks
+    else:
+        new_blocks = set()
 
-        existing_blocks = {
-            b.slug
-            for b in session.execute(
-                sqla.select(db.TextBlock).where(db.TextBlock.text_id == text.id)
+    existing_blocks_map = {}
+    if existing_blocks:
+        existing_blocks_list = (
+            session.execute(
+                sqla.select(db.TextBlock).where(
+                    db.TextBlock.text_id == text.id,
+                    db.TextBlock.slug.in_(existing_blocks),
+                )
             )
             .scalars()
             .all()
-        }
-        doc_blocks = {b.slug for s in document.sections for b in s.blocks}
+        )
+        existing_blocks_map = {b.slug: b for b in existing_blocks_list}
 
-        if existing_blocks != doc_blocks:
-            old_blocks = existing_blocks - doc_blocks
-            new_blocks = doc_blocks - existing_blocks
+    block_index = 0
+    for doc_section in document.sections:
+        section = section_map[doc_section.slug]
 
-            if old_blocks:
-                session.execute(
-                    sqla.delete(db.TextBlock).where(
-                        db.TextBlock.text_id == text.id,
-                        db.TextBlock.slug.in_(old_blocks),
-                    )
+        for block in doc_section.blocks:
+            block_index += 1
+
+            if block.slug in existing_blocks_map:
+                existing_block = existing_blocks_map[block.slug]
+                existing_block.xml = block.xml
+                existing_block.n = block_index
+                existing_block.section_id = section.id
+                existing_block.page_id = block.page_id
+            elif block.slug in new_blocks:
+                new_block = db.TextBlock(
+                    text_id=text.id,
+                    section_id=section.id,
+                    slug=block.slug,
+                    xml=block.xml,
+                    n=block_index,
+                    page_id=block.page_id,
                 )
+                session.add(new_block)
 
-            existing_blocks = existing_blocks - old_blocks
-        else:
-            new_blocks = set()
-
-        existing_blocks_map = {}
-        if existing_blocks:
-            existing_blocks_list = (
-                session.execute(
-                    sqla.select(db.TextBlock).where(
-                        db.TextBlock.text_id == text.id,
-                        db.TextBlock.slug.in_(existing_blocks),
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            existing_blocks_map = {b.slug: b for b in existing_blocks_list}
-
-        block_index = 0
-        for doc_section in document.sections:
-            section = section_map[doc_section.slug]
-
-            for block in doc_section.blocks:
-                block_index += 1
-
-                if block.slug in existing_blocks_map:
-                    existing_block = existing_blocks_map[block.slug]
-                    existing_block.xml = block.xml
-                    existing_block.n = block_index
-                    existing_block.section_id = section.id
-                    existing_block.page_id = block.page_id
-                elif block.slug in new_blocks:
-                    new_block = db.TextBlock(
-                        text_id=text.id,
-                        section_id=section.id,
-                        slug=block.slug,
-                        xml=block.xml,
-                        n=block_index,
-                        page_id=block.page_id,
-                    )
-                    session.add(new_block)
-
-        texts_map[config.slug] = text
-        if is_new_text:
-            created_count += 1
-        else:
-            updated_count += 1
+    texts_map[config.slug] = text
+    if is_new_text:
+        created_count += 1
+    else:
+        updated_count += 1
 
     session.flush()
 
-    for config in project_config.publish:
-        if config.parent_slug:
-            text = texts_map[config.slug]
-            parent_text = texts_map.get(config.parent_slug) or q.text(
-                config.parent_slug
-            )
-            if parent_text:
-                text.parent_id = parent_text.id
+    if config.parent_slug:
+        text = texts_map[config.slug]
+        parent_text = texts_map.get(config.parent_slug) or q.text(config.parent_slug)
+        if parent_text:
+            text.parent_id = parent_text.id
 
     session.flush()
 
-    for config in project_config.publish:
-        if config.parent_slug:
-            text = texts_map[config.slug]
-            parent_text = texts_map.get(config.parent_slug) or q.text(
-                config.parent_slug
-            )
-            if not parent_text:
-                continue
-
+    if config.parent_slug:
+        text = texts_map[config.slug]
+        parent_text = texts_map.get(config.parent_slug) or q.text(config.parent_slug)
+        if parent_text:
             parent_blocks = (
                 session.execute(
                     sqla.select(db.TextBlock)
@@ -1395,7 +1398,7 @@ def publish_create(slug):
     if updated_count > 0:
         flash(f"Updated {updated_count} text(s)", "success")
 
-    return redirect(url_for("proofing.project.publish_config", slug=slug))
+    return redirect(url_for("proofing.project.publish_config", slug=project_slug))
 
 
 @bp.route("/<slug>/admin", methods=["GET", "POST"])

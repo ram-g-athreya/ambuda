@@ -165,6 +165,7 @@
         {% endif %}
         {{ _dropdown_item('openNormalizeModal', _('Normalize...')) }}
         {{ _dropdown_item('openTransliterateModal', _('Transliterate...')) }}
+        {{ _dropdown_item('openAutoStructureModal', _('Auto-structure...')) }}
       {% endcall %}
     </div>
 
@@ -355,10 +356,10 @@
     </div>
   </form>
 
-  <div x-show="commandPaletteOpen"
+  <div x-show="activeModal === 'command-palette'"
        x-cloak
-       @click.self="closeCommandPalette"
-       @keydown.window.escape="closeCommandPalette"
+       @click.self="closeModal"
+       @keydown.window.escape="closeModal"
        class="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center pt-20 z-50">
     <div class="bg-white rounded-lg shadow-xl w-full max-w-lg overflow-hidden text-sm">
       <input id="command-palette-input"
@@ -381,17 +382,17 @@
     </div>
   </div>
 
-  <div x-show="historyModalOpen"
+  <div x-show="activeModal === 'history'"
        x-cloak
-       @click.self="closeHistoryModal"
-       @keydown.window.escape="closeHistoryModal"
+       @click.self="closeModal"
+       @keydown.window.escape="closeModal"
        class="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center pt-20 z-50">
     <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl overflow-hidden">
       <div class="bg-slate-100 p-4 border-b flex justify-between items-center">
         <h2 class="text-lg font-bold">{{ _('Revision history') }}</h2>
         <button type="button"
                 class="text-slate-700 hover:text-slate-900 font-bold text-xl"
-                @click="closeHistoryModal">&times;</button>
+                @click="closeModal">&times;</button>
       </div>
       <div class="p-4 max-h-96 overflow-y-scroll">
         <div x-show="historyLoading" class="text-center py-4">{{ _('Loading...') }}</div>
@@ -412,17 +413,17 @@
     </div>
   </div>
 
-  <div x-show="submitModalOpen"
+  <div x-show="activeModal === 'submit'"
        x-cloak
-       @click.self="closeSubmitModal"
-       @keydown.window.escape="closeSubmitModal"
+       @click.self="closeModal"
+       @keydown.window.escape="closeModal"
        class="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center pt-20 z-50">
     <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl overflow-hidden">
       <div class="bg-slate-100 p-4 border-b flex justify-between items-center">
         <h2 class="text-lg font-bold">{{ _('Save changes') }}</h2>
         <button type="button"
                 class="text-slate-700 hover:text-slate-900 font-bold text-xl"
-                @click="closeSubmitModal">&times;</button>
+                @click="closeModal">&times;</button>
       </div>
       <div class="p-4 max-h-[60vh] overflow-y-scroll">
         <div class="mb-4">
@@ -470,7 +471,7 @@
       <div class="bg-slate-100 p-4 border-t flex justify-end gap-3">
         <button type="button"
                 class="px-4 py-2 border border-slate-300 rounded hover:bg-slate-200"
-                @click="closeSubmitModal">
+                @click="closeModal">
           {{ _('Cancel') }}
         </button>
         <button type="button"
@@ -482,17 +483,17 @@
     </div>
   </div>
 
-  <div x-show="normalizeModalOpen"
+  <div x-show="activeModal === 'normalize'"
        x-cloak
-       @click.self="closeNormalizeModal"
-       @keydown.window.escape="closeNormalizeModal"
+       @click.self="closeModal"
+       @keydown.window.escape="closeModal"
        class="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center pt-20 z-50">
     <div class="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
       <div class="bg-slate-100 p-4 border-b flex justify-between items-center">
         <h2 class="text-lg font-bold">{{ _('Normalize Text') }}</h2>
         <button type="button"
                 class="text-slate-700 hover:text-slate-900 font-bold text-xl"
-                @click="closeNormalizeModal">&times;</button>
+                @click="closeModal">&times;</button>
       </div>
       <div class="p-4">
         <p class="text-sm text-slate-600 mb-4">{{ _('Select the normalizations to apply to the selected text:') }}</p>
@@ -518,7 +519,7 @@
       <div class="bg-slate-100 p-4 border-t flex justify-end gap-3">
         <button type="button"
                 class="px-4 py-2 border border-slate-300 rounded hover:bg-slate-200"
-                @click="closeNormalizeModal">
+                @click="closeModal">
           {{ _('Cancel') }}
         </button>
         <button type="button"
@@ -530,17 +531,17 @@
     </div>
   </div>
 
-  <div x-show="transliterateModalOpen"
+  <div x-show="activeModal === 'transliterate'"
        x-cloak
-       @click.self="closeTransliterateModal"
-       @keydown.window.escape="closeTransliterateModal"
+       @click.self="closeModal"
+       @keydown.window.escape="closeModal"
        class="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center pt-20 z-50">
     <div class="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
       <div class="bg-slate-100 p-4 border-b flex justify-between items-center">
         <h2 class="text-lg font-bold">{{ _('Transliterate Text') }}</h2>
         <button type="button"
                 class="text-slate-700 hover:text-slate-900 font-bold text-xl"
-                @click="closeTransliterateModal">&times;</button>
+                @click="closeModal">&times;</button>
       </div>
       <div class="p-4">
         <p class="text-sm text-slate-600 mb-4">{{ _('Transliterate the selected text:') }}</p>
@@ -568,13 +569,61 @@
       <div class="bg-slate-100 p-4 border-t flex justify-end gap-3">
         <button type="button"
                 class="px-4 py-2 border border-slate-300 rounded hover:bg-slate-200"
-                @click="closeTransliterateModal">
+                @click="closeModal">
           {{ _('Cancel') }}
         </button>
         <button type="button"
                 class="btn btn-submit"
                 @click="applyTransliteration">
           {{ _('Transliterate') }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div x-show="activeModal === 'auto-structure'"
+       x-cloak
+       @click.self="closeModal"
+       @keydown.window.escape="closeModal"
+       class="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center pt-20 z-50">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
+      <div class="bg-slate-100 p-4 border-b flex justify-between items-center">
+        <h2 class="text-lg font-bold">{{ _('Auto-structure') }}</h2>
+        <button type="button"
+                class="text-slate-700 hover:text-slate-900 font-bold text-xl"
+                @click="closeModal">&times;</button>
+      </div>
+      <div class="p-4">
+        <p class="text-sm text-slate-600 mb-4">{{ _('Select the elements to automatically structure:') }}</p>
+
+        <div class="space-y-3">
+          <label class="flex items-center gap-2 cursor-pointer hover:bg-slate-50 p-2 rounded">
+            <input type="checkbox" x-model="autoStructureStageDirections" class="w-4 h-4">
+            <span class="text-sm">{{ _('Stage directions (...)') }}</span>
+          </label>
+
+          <label class="flex items-center gap-2 cursor-pointer hover:bg-slate-50 p-2 rounded">
+            <input type="checkbox" x-model="autoStructureSpeakers" class="w-4 h-4">
+            <span class="text-sm">{{ _('Speakers (^.*[-])') }}</span>
+          </label>
+
+          <label class="flex items-center gap-2 cursor-pointer hover:bg-slate-50 p-2 rounded">
+            <input type="checkbox" x-model="autoStructureChaya" class="w-4 h-4">
+            <span class="text-sm">{{ _('Chaya [...]') }}</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="bg-slate-100 p-4 border-t flex justify-end gap-3">
+        <button type="button"
+                class="px-4 py-2 border border-slate-300 rounded hover:bg-slate-200"
+                @click="closeModal">
+          {{ _('Cancel') }}
+        </button>
+        <button type="button"
+                class="btn btn-submit"
+                @click="applyAutoStructure">
+          {{ _('Auto-structure') }}
         </button>
       </div>
     </div>

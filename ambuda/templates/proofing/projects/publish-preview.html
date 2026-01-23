@@ -103,7 +103,7 @@
   </div>
   {% endfor %}
 
-  <form method="POST" action="{{ url_for('proofing.project.publish_create', slug=project.slug) }}" class="not-prose mt-6 pt-4 border-t border-slate-300">
+  <form method="POST" action="{{ url_for('proofing.project.publish_create', project_slug=project.slug, text_slug=text_slug) }}" class="not-prose mt-6 pt-4 border-t border-slate-300">
     <div class="flex gap-3">
       <button type="submit" class="btn btn-primary">
         Publish

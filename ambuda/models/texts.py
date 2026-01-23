@@ -56,6 +56,7 @@ class Text(Base):
     #: The schema is defined in `TextConfig`.
     config = Column(JSON, nullable=True)
     language: Mapped[str] = mapped_column(String, nullable=False, default="sa")
+    status: Mapped[str | None] = mapped_column(String, nullable=True)
 
     #: Timestamp at which this text was created.
     #: Nullable for legacy reasons.

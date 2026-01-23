@@ -13,6 +13,12 @@
 {{ m.project_header_nested('Publish', project) }}
 {{ m.project_tabs(project=project, active='publish', is_mod=current_user.is_moderator) }}
 
+<script>
+  window.PUBLISH_CONFIG = {{ publish_config|tojson|safe }};
+  window.PUBLISH_CONFIG_SCHEMA = {{ publish_config_schema|tojson|safe }};
+  window.PROJECT_SLUG = {{ project.slug|tojson|safe }};
+</script>
+
 <div class="prose max-w-none">
   <h2>Publish</h2>
 
@@ -38,7 +44,7 @@
             <div class="flex justify-between items-start mb-3">
               <h4 class="font-medium text-slate-700" x-text="'Config ' + (index + 1)"></h4>
               <div class="flex gap-2">
-                <a :href="entry.slug ? '{{ url_for('proofing.project.publish_preview', slug=project.slug) }}?text_slug=' + entry.slug : '#'"
+                <a :href="getPreviewUrl(entry.slug)"
                    :class="entry.slug ? 'btn btn-basic text-sm' : 'btn btn-basic text-sm opacity-50 cursor-not-allowed'"
                    :disabled="!entry.slug">
                   Preview
@@ -159,149 +165,5 @@
     </datalist>
   </div>
 </div>
-
-<script>
-function publishConfig() {
-  return {
-    config: {
-      publish: [],
-      pages: []
-    },
-    showJSON: false,
-    fields: [],
-
-    init() {
-      this.generateFieldsFromSchema();
-
-      const configJson = {{ publish_config|tojson|safe }};
-      try {
-        const parsed = JSON.parse(configJson);
-        this.config = parsed;
-
-        if (!Array.isArray(this.config.publish)) {
-          this.config.publish = [];
-        }
-
-        if (!Array.isArray(this.config.pages)) {
-          this.config.pages = [];
-        }
-
-        this.config.publish.forEach(entry => {
-          this.fields.forEach(field => {
-            if (!(field.name in entry)) {
-              entry[field.name] = this.getDefaultValue(field);
-            }
-          });
-        });
-      } catch (e) {
-        console.error('Failed to parse config:', e);
-        this.config = { publish: [], pages: [] };
-      }
-    },
-
-    generateFieldsFromSchema() {
-      const schema = {{ publish_config_schema|tojson|safe }};
-      const properties = schema.properties || {};
-      const required = schema.required || [];
-
-      const fieldMetadata = {
-        title: { placeholder: 'e.g., Rāmāyaṇa', description: 'Display title for the text' },
-        slug: { placeholder: 'e.g., ramayana', description: 'Unique identifier for the text' },
-        target: { placeholder: 'e.g., text1', description: 'Target text field from structuring' },
-        author: { placeholder: 'e.g., Vālmīki', description: 'Author of the work' },
-        genre: { placeholder: 'e.g., Kāvya', description: 'Genre of the text' },
-        language: { placeholder: '', description: 'Primary language of the text' },
-        parent_slug: { placeholder: 'e.g., ramayana', description: 'Slug of the parent text (for translations/commentaries)' }
-      };
-
-      // Define field order explicitly
-      const fieldOrder = ['title', 'slug', 'target', 'author', 'genre', 'language', 'parent_slug'];
-
-      this.fields = fieldOrder
-        .filter(name => properties[name])
-        .map(name => {
-          const prop = properties[name];
-          let type = prop.type;
-          let enumValues = prop.enum;
-
-          if (prop.anyOf) {
-            const nonNullType = prop.anyOf.find(t => t.type !== 'null');
-            if (nonNullType) {
-              type = nonNullType.type;
-              enumValues = nonNullType.enum;
-            }
-          }
-
-          const meta = fieldMetadata[name] || {};
-
-          return {
-            name: name,
-            label: this.titleCase(name),
-            type: type,
-            required: required.includes(name),
-            enum: enumValues,
-            placeholder: meta.placeholder || '',
-            description: prop.description || meta.description || ''
-          };
-        });
-    },
-
-    titleCase(str) {
-      return str.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-    },
-
-    getDefaultValue(field) {
-      if (field.type === 'boolean') return false;
-      if (field.type === 'number' || field.type === 'integer') return null;
-      return '';
-    },
-
-    addPublishEntry() {
-      const newEntry = {};
-      this.fields.forEach(field => {
-        newEntry[field.name] = this.getDefaultValue(field);
-      });
-      this.config.publish.push(newEntry);
-    },
-
-    removePublishEntry(index) {
-      if (confirm('Remove this configuration?')) {
-        this.config.publish.splice(index, 1);
-      }
-    },
-
-    generateJSON() {
-      const cleaned = {
-        publish: this.config.publish.map(entry => {
-          const clean = {};
-          this.fields.forEach(field => {
-            const value = entry[field.name];
-            // Include required fields always & optional fields only if they have a value
-            if (field.required || (value !== '' && value !== null && value !== undefined)) {
-              clean[field.name] = value;
-            }
-          });
-          return clean;
-        }),
-        pages: this.config.pages
-      };
-      return JSON.stringify(cleaned, null, 2);
-    },
-
-    copyJSON() {
-      navigator.clipboard.writeText(this.generateJSON()).then(() => {
-        alert('Copied to clipboard!');
-      }).catch(err => {
-        console.error('Copy failed:', err);
-      });
-    },
-
-    submitForm(event) {
-      this.$refs.hiddenConfig.value = this.generateJSON();
-      event.target.submit();
-    }
-  };
-}
-</script>
 
 {% endblock %}

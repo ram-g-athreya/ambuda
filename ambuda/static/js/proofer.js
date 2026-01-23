@@ -4,22 +4,38 @@
 import { $ } from './core.ts';
 import ProofingEditor, { XMLView } from './prosemirror-editor.ts';
 import { INLINE_MARKS } from './marks-config.ts';
+import routes from './routes.js';
 
 const CONFIG_KEY = 'proofing-editor';
 
-const LAYOUT_IMAGE_LEFT = 'image-left';
-const LAYOUT_IMAGE_RIGHT = 'image-right';
-const LAYOUT_IMAGE_TOP = 'image-top';
-const LAYOUT_IMAGE_BOTTOM = 'image-bottom';
-const ALL_LAYOUTS = [LAYOUT_IMAGE_LEFT, LAYOUT_IMAGE_RIGHT, LAYOUT_IMAGE_TOP, LAYOUT_IMAGE_BOTTOM];
+const ImageLayout = {
+  Left: 'image-left',
+  Right: 'image-right',
+  Top: 'image-top',
+  Bottom: 'image-bottom',
+};
+const ALL_LAYOUTS = [ImageLayout.Left, ImageLayout.Right, ImageLayout.Top, ImageLayout.Bottom];
 
-const CLASSES_IMAGE_LEFT = 'flex flex-row-reverse h-[90vh]';
-const CLASSES_IMAGE_RIGHT = 'flex flex-row h-[90vh]';
-const CLASSES_IMAGE_TOP = 'flex flex-col-reverse h-[90vh]';
-const CLASSES_IMAGE_BOTTOM = 'flex flex-col h-[90vh]';
+const ImageClasses = {
+  Left: 'flex flex-row-reverse h-[90vh]',
+  Right: 'flex flex-row h-[90vh]',
+  Top: 'flex flex-col-reverse h-[90vh]',
+  Bottom: 'flex flex-col h-[90vh]',
+};
 
-const VIEW_VISUAL = 'visual';
-const VIEW_XML = 'xml';
+const ViewType = {
+  Visual: 'visual',
+  XML: 'xml',
+};
+
+const ModalType = {
+  CommandPalette: 'command-palette',
+  History: 'history',
+  Submit: 'submit',
+  Normalize: 'normalize',
+  Transliterate: 'transliterate',
+  AutoStructure: 'auto-structure',
+};
 
 // Parse OCR bounding boxes from TSV
 function parseBoundingBoxes(tsvData) {
@@ -165,7 +181,7 @@ export default () => ({
   textZoom: 1,
   imageZoom: null,
   layout: 'image-right',
-  viewMode: VIEW_VISUAL,
+  viewMode: ViewType.Visual,
   // [transliteration] the source script
   fromScript: 'hk',
   // [transliteration] the destination script
@@ -174,7 +190,7 @@ export default () => ({
   showAdvancedOptions: false,
 
   // Internal-only
-  layoutClasses: CLASSES_IMAGE_RIGHT,
+  layoutClasses: ImageClasses.Right,
   isRunningOCR: false,
   isRunningLLMStructuring: false,
   isRunningStructuring: false,
@@ -182,24 +198,24 @@ export default () => ({
   xmlParseError: null,
   imageViewer: null,
   editor: null,
-  commandPaletteOpen: false,
+  // Modal state - only one modal open at a time
+  activeModal: null,
   commandPaletteQuery: '',
   commandPaletteSelected: 0,
-  historyModalOpen: false,
   historyLoading: false,
   historyRevisions: [],
-  submitModalOpen: false,
   modalSummary: '',
   modalStatus: '',
   originalContent: '',
   changesPreview: '',
-  // Normalize modal
-  normalizeModalOpen: false,
+  // Normalize modal options
   normalizeReplaceColonVisarga: true,
   normalizeReplaceSAvagraha: true,
   normalizeReplaceDoublePipe: true,
-  // Transliterate modal
-  transliterateModalOpen: false,
+  // Auto-structure modal options
+  autoStructureStageDirections: true,
+  autoStructureSpeakers: true,
+  autoStructureChaya: true,
   // OCR bounding box highlighting
   boundingBoxes: [],
   boundingBoxLines: [],
@@ -222,7 +238,7 @@ export default () => ({
     // the underlying data model and causes bizarre errors, e.g.:
     //
     // https://discuss.prosemirror.net/t/getting-rangeerror-applying-a-mismatched-transaction-even-with-trivial-code/4948/3
-    if (this.viewMode === VIEW_XML) {
+    if (this.viewMode === ViewType.XML) {
       this.editor = new XMLView(editorElement, initialContent, () => {
         this.hasUnsavedChanges = true;
         $('#content').value = Alpine.raw(this.editor).getText();
@@ -268,6 +284,7 @@ export default () => ({
       { label: 'View > Show image on bottom', action: () => this.displayImageOnBottom() },
       { label: 'Tools > Normalize', action: () => this.openNormalizeModal() },
       { label: 'Tools > Transliterate', action: () => this.openTransliterateModal() },
+      { label: 'Tools > Auto-structure', action: () => this.openAutoStructureModal() },
     ];
   },
 
@@ -280,7 +297,7 @@ export default () => ({
   },
 
   openCommandPalette() {
-    this.commandPaletteOpen = true;
+    this.activeModal = ModalType.CommandPalette;
     this.commandPaletteQuery = '';
     this.commandPaletteSelected = 0;
 
@@ -295,8 +312,8 @@ export default () => ({
     });
   },
 
-  closeCommandPalette() {
-    this.commandPaletteOpen = false;
+  closeModal() {
+    this.activeModal = null;
   },
 
   handleCommandPaletteKeydown(e) {
@@ -312,7 +329,7 @@ export default () => ({
       this.executeSelectedCommand();
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      this.closeCommandPalette();
+      this.closeModal();
     }
   },
 
@@ -320,7 +337,7 @@ export default () => ({
     const filtered = this.getFilteredCommands();
     if (filtered[index]) {
       filtered[index].action();
-      this.closeCommandPalette();
+      this.closeModal();
     }
   },
 
@@ -379,14 +396,14 @@ export default () => ({
   },
 
   getLayoutClasses() {
-    if (this.layout === LAYOUT_IMAGE_LEFT) {
-      return CLASSES_IMAGE_LEFT;
-    } else if (this.layout === LAYOUT_IMAGE_TOP) {
-      return CLASSES_IMAGE_TOP;
-    } else if (this.layout === LAYOUT_IMAGE_BOTTOM) {
-      return CLASSES_IMAGE_BOTTOM;
+    if (this.layout === ImageLayout.Left) {
+      return ImageClasses.Left;
+    } else if (this.layout === ImageLayout.Top) {
+      return ImageClasses.Top;
+    } else if (this.layout === ImageLayout.Bottom) {
+      return ImageClasses.Bottom;
     }
-    return CLASSES_IMAGE_RIGHT;
+    return ImageClasses.Right;
   },
 
   // Callbacks
@@ -514,32 +531,32 @@ export default () => ({
   // Layout controls
 
   displayImageOnLeft() {
-    this.layout = LAYOUT_IMAGE_LEFT;
+    this.layout = ImageLayout.Left;
     this.layoutClasses = this.getLayoutClasses();
     this.saveSettings();
   },
   displayImageOnRight() {
-    this.layout = LAYOUT_IMAGE_RIGHT;
+    this.layout = ImageLayout.Right;
     this.layoutClasses = this.getLayoutClasses();
     this.saveSettings();
   },
   displayImageOnTop() {
-    this.layout = LAYOUT_IMAGE_TOP;
+    this.layout = ImageLayout.Top;
     this.layoutClasses = this.getLayoutClasses();
     this.saveSettings();
   },
   displayImageOnBottom() {
-    this.layout = LAYOUT_IMAGE_BOTTOM;
+    this.layout = ImageLayout.Bottom;
     this.layoutClasses = this.getLayoutClasses();
     this.saveSettings();
   },
 
   displayVisualView() {
-    this.displayView(VIEW_VISUAL);
+    this.displayView(ViewType.Visual);
   },
 
   displayXMLView() {
-    this.displayView(VIEW_XML);
+    this.displayView(ViewType.XML);
   },
 
   displayView(viewMode) {
@@ -551,7 +568,7 @@ export default () => ({
     const content = Alpine.raw(this.editor).getText();
     Alpine.raw(this.editor).destroy();
 
-    if (viewMode === VIEW_VISUAL) {
+    if (viewMode === ViewType.Visual) {
       try {
         this.editor = new ProofingEditor(editorElement, content, () => {
           this.hasUnsavedChanges = true;
@@ -565,7 +582,7 @@ export default () => ({
         console.error('Failed to parse XML:', error);
         return;
       }
-    } else if (viewMode === VIEW_XML) {
+    } else if (viewMode === ViewType.XML) {
       this.editor = new XMLView(editorElement, content, () => {
         this.hasUnsavedChanges = true;
         $('#content').value = Alpine.raw(this.editor).getText();
@@ -583,7 +600,7 @@ export default () => ({
     this.showAdvancedOptions = !this.showAdvancedOptions;
     this.saveSettings();
 
-    if (this.viewMode === VIEW_VISUAL && Alpine.raw(this.editor).setShowAdvancedOptions) {
+    if (this.viewMode === ViewType.Visual && Alpine.raw(this.editor).setShowAdvancedOptions) {
       Alpine.raw(this.editor).setShowAdvancedOptions(this.showAdvancedOptions);
     }
   },
@@ -631,12 +648,9 @@ export default () => ({
   },
 
   openNormalizeModal() {
-    this.normalizeModalOpen = true;
+    this.activeModal = ModalType.Normalize;
   },
 
-  closeNormalizeModal() {
-    this.normalizeModalOpen = false;
-  },
 
   applyNormalization() {
     this.changeSelectedText((text) => {
@@ -658,21 +672,59 @@ export default () => ({
     });
 
     this.saveSettings();
-    this.closeNormalizeModal();
+    this.closeModal();
   },
 
   openTransliterateModal() {
-    this.transliterateModalOpen = true;
+    this.activeModal = ModalType.Transliterate;
   },
 
-  closeTransliterateModal() {
-    this.transliterateModalOpen = false;
+  openAutoStructureModal() {
+    this.activeModal = ModalType.AutoStructure;
+  },
+
+
+  async applyAutoStructure() {
+    const content = Alpine.raw(this.editor).getText();
+    const options = {
+      stageDirections: this.autoStructureStageDirections,
+      speakers: this.autoStructureSpeakers,
+      chaya: this.autoStructureChaya,
+    };
+
+    try {
+      this.isRunningStructuring = true;
+      const response = await fetch(routes.proofingAutoStructure(), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ content, options }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (data.error) {
+        this.xmlParseError = data.error;
+      } else {
+        Alpine.raw(this.editor).setText(data.content);
+        this.closeModal();
+      }
+    } catch (error) {
+      console.error('Auto-structure failed:', error);
+      this.xmlParseError = 'Auto-structure failed: ' + error.message;
+    } finally {
+      this.isRunningStructuring = false;
+    }
   },
 
   applyTransliteration() {
     this.changeSelectedText((s) => Sanscript.t(s, this.fromScript, this.toScript));
     this.saveSettings();
-    this.closeTransliterateModal();
+    this.closeModal();
   },
 
   transliterateSelectedText() {
@@ -691,7 +743,7 @@ export default () => ({
   },
 
   async openHistoryModal() {
-    this.historyModalOpen = true;
+    this.activeModal = ModalType.History;
     this.historyLoading = true;
     this.historyRevisions = [];
 
@@ -713,9 +765,6 @@ export default () => ({
     }
   },
 
-  closeHistoryModal() {
-    this.historyModalOpen = false;
-  },
 
   getRevisionColorClass(status) {
     if (status === 'reviewed-0') {
@@ -739,12 +788,9 @@ export default () => ({
 
     this.modalSummary = $('input[name="summary"]')?.value || '';
     this.modalStatus = $('input[name="status"]')?.value || '';
-    this.submitModalOpen = true;
+    this.activeModal = ModalType.Submit;
   },
 
-  closeSubmitModal() {
-    this.submitModalOpen = false;
-  },
 
   generateChangesPreview() {
     const currentContent = Alpine.raw(this.editor).getText();
@@ -816,7 +862,7 @@ export default () => ({
     if (summaryInput) summaryInput.value = this.modalSummary;
     if (statusInput) statusInput.value = this.modalStatus;
 
-    this.closeSubmitModal();
+    this.closeModal();
     this.hasUnsavedChanges = false;
 
     const form = $('form');

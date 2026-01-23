@@ -54,6 +54,43 @@ export function getBlockSlug(blockID) {
   return blockID.split('.').slice(1).join('.');
 }
 
+/**
+ * Split Devanagari text into aksharas (syllabic units).
+ *
+ * An akshara consists of a base character (consonant or vowel) followed by
+ * any combining marks (nukta, vowel signs, virama, anusvara, visarga, etc.).
+ *
+ * @param {string} text - Input text (may contain both Devanagari and non-Devanagari)
+ * @returns {string[]} Array of strings, each representing either an akshara or a single character
+ */
+function toAksharas(text) {
+  const aksharas = [];
+  // Match Devanagari aksharas: base character + combining marks
+  // Base characters: U+0900-U+0963 (vowels, consonants, etc.), U+0970-U+097F
+  // Combining marks: U+093C-U+094F (nukta, vowel signs, virama), U+0951-U+0954, U+0962-U+0963
+  const aksharaRegex = /[\u0900-\u0963\u0970-\u097F][\u093C-\u094F\u0951-\u0954\u0962-\u0963]*/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = aksharaRegex.exec(text)) !== null) {
+    // Add any non-Devanagari characters before this akshara
+    for (let i = lastIndex; i < match.index; i++) {
+      aksharas.push(text[i]);
+    }
+
+    // Add the akshara
+    aksharas.push(match[0]);
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Add any remaining characters
+  for (let i = lastIndex; i < text.length; i++) {
+    aksharas.push(text[i]);
+  }
+
+  return aksharas;
+}
+
 /* Alpine code
  * ===========
  */
@@ -128,6 +165,33 @@ export default () => ({
   init() {
     this.loadSettings();
     this.data = JSON.parse(document.getElementById('payload').textContent);
+
+    // Insert soft hyphens between aksharas after DOM is ready
+    this.$nextTick(() => {
+      function insertSoftHyphens(node) {
+        if (node.nodeType === Node.TEXT_NODE) {
+          const text = node.textContent;
+          const aksharas = toAksharas(text);
+          const htmlString = aksharas.join('&shy;');
+
+          const temp = document.createElement('span');
+          temp.innerHTML = htmlString;
+
+          const fragment = document.createDocumentFragment();
+          while (temp.firstChild) {
+            fragment.appendChild(temp.firstChild);
+          }
+          node.parentNode.replaceChild(fragment, node);
+        } else if (node.nodeType === Node.ELEMENT_NODE) {
+          Array.from(node.childNodes).forEach(child => insertSoftHyphens(child));
+        }
+      }
+
+      const elements = document.querySelectorAll('s-p');
+      elements.forEach(el => {
+        insertSoftHyphens(el);
+      });
+    });
   },
 
   // Settings

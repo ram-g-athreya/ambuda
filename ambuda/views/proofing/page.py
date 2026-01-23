@@ -3,7 +3,9 @@
 The main route here is `edit`, which defines the page editor and the edit flow.
 """
 
+import re
 from dataclasses import dataclass
+import defusedxml.ElementTree as DET
 
 from flask import (
     Blueprint,
@@ -390,6 +392,107 @@ def llm_structuring_api(project_slug, page_slug):
     except Exception as e:
         current_app.logger.error(f"LLM structuring failed: {e}")
         return f"Error: {str(e)}", 500
+
+
+@api.route("/proofing/auto-structure", methods=["POST"])
+@login_required
+def auto_structure_api():
+    """Apply auto-structuring heuristics to the page content."""
+    data = request.json
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+
+    content = data.get("content", "")
+    options = data.get("options", {})
+
+    if not content:
+        return jsonify({"error": "No content provided"}), 400
+
+    try:
+        root = DET.fromstring(content)
+        if root.tag != "page":
+            return jsonify({"error": "Invalid XML: root tag must be 'page'"}), 400
+
+        for block in root:
+            if block.tag not in (
+                "p",
+                "verse",
+                "heading",
+                "title",
+                "subtitle",
+                "trailer",
+            ):
+                continue
+
+            block_text = _get_element_text(block)
+
+            if options.get("stageDirections"):
+                block_text = _mark_stage_directions(block_text, block)
+
+            if options.get("speakers"):
+                block_text = _mark_speakers(block_text, block)
+
+            if options.get("chaya"):
+                block_text = _mark_chaya(block_text, block)
+
+            _set_element_text(block, block_text)
+
+        import xml.etree.ElementTree as ET
+
+        structured_content = ET.tostring(root, encoding="unicode")
+        return jsonify({"content": structured_content})
+
+    except Exception as e:
+        current_app.logger.error(f"Auto-structuring failed: {e}")
+        return jsonify({"error": f"Auto-structuring failed: {str(e)}"}), 500
+
+
+def _get_element_text(el):
+    """Get the text content of an element, including child elements."""
+    parts = []
+    if el.text:
+        parts.append(el.text)
+    for child in el:
+        import xml.etree.ElementTree as ET
+
+        parts.append(ET.tostring(child, encoding="unicode"))
+    return "".join(parts)
+
+
+def _set_element_text(el, text):
+    """Set the text content of an element, preserving XML structure."""
+    import xml.etree.ElementTree as ET
+
+    el.clear()
+    el.tag = el.tag
+    try:
+        temp = DET.fromstring(f"<temp>{text}</temp>")
+        el.text = temp.text
+        for child in temp:
+            el.append(child)
+    except Exception:
+        el.text = text
+
+
+def _mark_stage_directions(text, block):
+    """Mark stage directions with (.*?) pattern."""
+    pattern = r"\((.*?)\)"
+    replacement = r"<stage>\1</stage>"
+    return re.sub(pattern, replacement, text)
+
+
+def _mark_speakers(text, block):
+    """Mark speakers with ^.*[-] pattern."""
+    pattern = r"^(.*?)[-–]"
+    replacement = r"<speaker>\1</speaker>-"
+    return re.sub(pattern, replacement, text, flags=re.MULTILINE)
+
+
+def _mark_chaya(text, block):
+    """Mark chaya with \[.*?\] pattern."""
+    pattern = r"\[(.*?)\]"
+    replacement = r"<chaya>\1</chaya>"
+    return re.sub(pattern, replacement, text)
 
 
 @api.route("/proofing/<project_slug>/<page_slug>/history")

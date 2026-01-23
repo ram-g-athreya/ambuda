@@ -12,10 +12,16 @@ B = s.ProofBlock
 
 
 @dataclass
+class MockStatus:
+    name: str
+
+
+@dataclass
 class MockRevision:
     id: int
     page_id: int
     content: str
+    status: MockStatus | None = None
 
 
 @pytest.mark.parametrize(
@@ -86,6 +92,16 @@ def test_validate_page_xml(input, expected):
         (
             "<verse>f<fix>oo</fix>oo\nbar</verse>",
             "<lg><l>f<supplied>oo</supplied>oo</l><l>bar</l></lg>",
+        ),
+        # <lg> should respect and retain inline marks at the end of lines too.
+        (
+            "<verse>f<fix>oo</fix>\nbar</verse>",
+            "<lg><l>f<supplied>oo</supplied></l><l>bar</l></lg>",
+        ),
+        # <lg> should normalize whitespace to some extent.
+        (
+            "<verse>f<fix>oo</fix> \n bar</verse>",
+            "<lg><l>f<supplied>oo</supplied></l><l>bar</l></lg>",
         ),
         # TODO: too hard
         # ("<verse>f<fix>oo\nbar</fix> biz</verse>", "<lg><l>f<supplied>oo</supplied></l><l><supplied>bar</supplied> biz</l></lg>"),
@@ -220,7 +236,9 @@ def _test_create_tei_document(input, expected):
         revisions.append(MockRevision(id=i, page_id=i, content=page_xml))
 
     page_numbers = [str(x + 1) for x in range(len(revisions))]
-    tei_doc, _errors = s.create_tei_document(revisions, page_numbers, "(and)")
+    tei_doc, _errors, _page_statuses = s.create_tei_document(
+        revisions, page_numbers, "(and)"
+    )
     tei_blocks = tei_doc.sections[0].blocks
     assert tei_blocks == expected
 

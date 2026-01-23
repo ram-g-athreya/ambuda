@@ -110,13 +110,11 @@ VALIDATION_SPECS = {
 
 @dc.dataclass
 class IndexedBlock:
-    # Database ID
-    page_id: int
-    # Database ID
-    revision_id: int
-    # 1-indexed
+    # Revision
+    revision: db.Revision
+    # 1-indexed image number
     image_number: int
-    # 1-indexed
+    # 0-indexed block index within the page
     block_index: int
     page_xml: ET.Element
 
@@ -506,7 +504,7 @@ def _rewrite_block_to_tei_xml(xml: ET.Element, image_number: int):
     # Text reshaping
     # TODO: move this elsewhere?
     for el in xml.iter():
-        if el.tag == "stage":
+        if el.tag == InlineType.STAGE:
             # Remove whitespace around () for stage directions
             text = el.text or ""
             text = re.sub(r"\(\s*", "", text)
@@ -515,18 +513,18 @@ def _rewrite_block_to_tei_xml(xml: ET.Element, image_number: int):
             # add whitespace before following element
             if el.tail and el.tail[0] != " ":
                 el.tail = " " + el.tail
-        elif el.tag == "speaker":
+        elif el.tag == InlineType.SPEAKER:
             # Remove trailing "-" for speakers
             text = el.text or ""
-            text = re.sub(r"(.*?)\s*[-–]\s*$", r"\1", text)
+            text = re.sub(r"(.*?)\s*[-–]+\s*$", r"\1", text)
             el.text = text
-        elif el.tag == "chaya":
+        elif el.tag == InlineType.CHAYA:
             # Remove surrounding [ ] brackets.
             text = (el.text or "").strip()
             text = re.sub(r"^\[\s*", "", text)
             text = re.sub(r"\s*\]$", "", text)
             el.text = text
-        elif el.tag == "verse":
+        elif el.tag == BlockType.VERSE:
             # Add consistent spacing around double dandas.
             text = (el.text or "").strip()
             text = re.sub(r"\s*॥\s*", " ॥ ", text)
@@ -539,14 +537,13 @@ def _rewrite_block_to_tei_xml(xml: ET.Element, image_number: int):
 
     # <speaker>
     try:
-        speaker = next(x for x in xml if x.tag == "speaker")
+        speaker = next(x for x in xml if x.tag == InlineType.SPEAKER)
     except StopIteration:
         speaker = None
     if speaker is not None:
         old_tag = xml.tag
         old_attrib = xml.attrib
-        print(old_attrib)
-        old_children = [x for x in xml if x.tag != "speaker"]
+        old_children = [x for x in xml if x.tag != InlineType.SPEAKER]
 
         speaker_tail = speaker.tail or ""
         speaker.tail = ""
@@ -610,11 +607,11 @@ def _rewrite_block_to_tei_xml(xml: ET.Element, image_number: int):
 
         i += 1
 
-    if xml.tag == "verse":
+    if xml.tag == BlockType.VERSE:
         xml.tag = "lg"
-    elif xml.tag == "heading":
+    elif xml.tag == BlockType.HEADING:
         xml.tag = "head"
-    elif xml.tag == "footnote":
+    elif xml.tag == BlockType.FOOTNOTE:
         xml.tag = "note"
 
     # <p> text normalization
@@ -665,12 +662,12 @@ def _rewrite_block_to_tei_xml(xml: ET.Element, image_number: int):
             if not lines:
                 lines.append(ET.Element("l"))
             lines[-1].append(el)
-            for i, fragment in enumerate((el.tail or "").strip().splitlines()):
+            for i, fragment in enumerate((el.tail or "").splitlines()):
                 if i == 0:
-                    el.tail = fragment
+                    el.tail = fragment.strip()
                 else:
                     lines.append(ET.Element("l"))
-                    lines[-1].text = fragment
+                    lines[-1].text = fragment.strip()
 
         xml.text = ""
         xml.clear()
@@ -683,7 +680,7 @@ def _rewrite_block_to_tei_xml(xml: ET.Element, image_number: int):
         xml.attrib["type"] = "footnote"
 
 
-def _concatenate_tei_xml_blocks(
+def _concatenate_tei_xml_blocks_across_page_boundary(
     first: ET.Element, second: ET.Element, page_number: str
 ):
     """Concatenate two blocks of TEI xml by updating the first block in-place.
@@ -693,12 +690,13 @@ def _concatenate_tei_xml_blocks(
     if first.tag == "sp":
         # Special case for <sp>: concatenate children, leaving speaker alone.
         assert len(first) == 2
-        _concatenate_tei_xml_blocks(first[1], second, page_number)
+        _concatenate_tei_xml_blocks_across_page_boundary(first[1], second, page_number)
         return
 
+    pb = ET.SubElement(first, "pb")
+    pb.attrib["n"] = page_number
+
     if first.tag in {"p", "lg"}:
-        pb = ET.SubElement(first, "pb")
-        pb.attrib["n"] = page_number
         pb.tail = second.text or ""
 
     first.extend(second)
@@ -706,7 +704,7 @@ def _concatenate_tei_xml_blocks(
 
 def create_tei_document(
     revisions: list[db.Revision], page_numbers: list[str], target: str
-) -> tuple[TEIDocument, list[str]]:
+) -> tuple[TEIDocument, list[str], set[str]]:
     """Convert the project to a TEI document for publication.
 
     Approach:
@@ -718,10 +716,10 @@ def create_tei_document(
     :param page_numbers: a map from page index (e.g, 1, 2, 3) to the book's actual
         page numbers (ii, 4, etc.)
 
-    :return: a complete document.
+    :return: a tuple of (complete document, errors, set of page statuses used).
     """
 
-    def _iter_blocks() -> Iterable[IndexedBlock]:
+    def _iter_blocks(revisions) -> Iterable[IndexedBlock]:
         """Iterate over all blocks in the given revisions."""
         for i, revision in enumerate(revisions):
             page_text = revision.content
@@ -734,19 +732,18 @@ def create_tei_document(
 
             image_number = i + 1
             for block_index, block in enumerate(page_xml):
-                yield IndexedBlock(
-                    revision.page_id, revision.id, image_number, block_index, page_xml
-                )
+                yield IndexedBlock(revision, image_number, block_index, page_xml)
 
-    def _iter_filtered_blocks() -> Iterable[IndexedBlock]:
+    def _iter_filtered_blocks(revisions) -> Iterable[IndexedBlock]:
         if target.startswith("("):
             block_filter = Filter(target)
         else:
             # Legacy behavior.
             block_filter = Filter(f"(label {target})")
 
-        for block in _iter_blocks():
-            if block.page_xml.tag == BlockType.IGNORE:
+        for block in _iter_blocks(revisions):
+            block_xml = block.page_xml[block.block_index]
+            if block_xml.tag == BlockType.IGNORE:
                 # Always skip "ignore" blocks.
                 continue
 
@@ -775,6 +772,8 @@ def create_tei_document(
     block_ns: dict[str, str] = {}
     merge_next = None
     active_sp = None
+    # Track page statuses
+    page_statuses: set[str] = set()
 
     def _get_next_n(block_ns, tag):
         prev_n = block_ns.get(tag, f"{tag}0")
@@ -784,10 +783,15 @@ def create_tei_document(
             n = prev_n + "2"
         return n
 
-    for block in _iter_filtered_blocks():
+    for block in _iter_filtered_blocks(revisions):
         proof_xml = block.page_xml[block.block_index]
 
-        if proof_xml.tag == "metadata":
+        # Track page status
+        revision = next((r for r in revisions if r.id == block.revision.id), None)
+        if revision and revision.status:
+            page_statuses.add(revision.status.name)
+
+        if proof_xml.tag == BlockType.METADATA:
             # `metadata` contains special commands for this function.
             data = _parse_metadata(proof_xml.text or "")
             if "speaker" in data:
@@ -826,7 +830,7 @@ def create_tei_document(
 
             if tei_xml.tag == "sp":
                 for child_xml in tei_xml:
-                    if child_xml.tag == "speaker":
+                    if child_xml.tag == InlineType.SPEAKER:
                         # <speaker> should never be numbered.
                         continue
                     if "n" in child_xml.attrib:
@@ -852,8 +856,14 @@ def create_tei_document(
         except IndexError:
             print_page_number = DEFAULT_PRINT_PAGE_NUMBER
 
-        if merge_next is not None:
-            _concatenate_tei_xml_blocks(merge_next, tei_xml, print_page_number)
+        if merge_next is not None and (
+            merge_next.tag == tei_xml.tag or merge_next.tag == "sp"
+        ):
+            # Only merge matching types (<p> and <p>, <lg> and <lg>, etc.)
+            # Otherwise we get weird behavior, e.g. merging <lg> with <note>
+            _concatenate_tei_xml_blocks_across_page_boundary(
+                merge_next, tei_xml, print_page_number
+            )
             merge_next = None
         else:
             if tei_xml.tag == "note":
@@ -862,7 +872,7 @@ def create_tei_document(
                     note_name = f"{block.image_number}.{mark}"
                     footnote_map[note_name] = tei_xml
             elif n:
-                page_map[n] = block.page_id
+                page_map[n] = block.revision.page_id
                 if tei_xml.tag in {"p", "lg"} and active_sp is not None:
                     active_sp.append(tei_xml)
                 else:
@@ -916,4 +926,4 @@ def create_tei_document(
         section.blocks.append(block)
 
     doc = TEIDocument(sections=list(tei_sections.values()))
-    return (doc, errors)
+    return (doc, errors, page_statuses)
