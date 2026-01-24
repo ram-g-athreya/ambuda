@@ -32,6 +32,8 @@ from wtforms.validators import Optional
 
 import ambuda.database as db
 import ambuda.queries as q
+from ambuda.models.proofing import ProjectStatus
+from ambuda.models.texts import TextStatus
 from ambuda.views.admin import tasks
 
 
@@ -82,6 +84,8 @@ class ModelConfig:
     permission: str = "admin"
     #: Field to display for foreign keys (e.g., 'slug', 'username'). If None, shows ID.
     display_field: str | None = None
+    #: Enum classes for string fields (e.g., {'status': TextStatus})
+    enum_fields: dict[str, type] = field(default_factory=dict)
 
 
 MODEL_CONFIG = [
@@ -180,6 +184,7 @@ MODEL_CONFIG = [
             ),
         ],
         display_field="slug",
+        enum_fields={"status": ProjectStatus},
     ),
     ModelConfig(
         model=db.ProjectSponsorship,
@@ -242,6 +247,7 @@ MODEL_CONFIG = [
             ),
         ],
         display_field="slug",
+        enum_fields={"status": TextStatus},
     ),
     ModelConfig(
         model=db.TextBlock,
@@ -384,6 +390,7 @@ def populate_model_m2m_from_form(obj, form, model_class, session):
 
 
 def create_model_form(model_class, obj=None):
+    model_config = get_model_config(model_class.__name__)
     inspector = inspect(model_class)
     fields = {}
 
@@ -440,7 +447,19 @@ def create_model_form(model_class, obj=None):
         elif python_type == bool:
             fields[col_name] = BooleanField(col_name)
         elif python_type == str:
-            if isinstance(col_type, Text) or (
+            enum_class = (
+                model_config.enum_fields.get(col_name) if model_config else None
+            )
+
+            if enum_class:
+                choices = []
+                if column.nullable:
+                    choices.append(("", "-- None --"))
+                choices.extend([(e.value, e.value) for e in enum_class])
+                fields[col_name] = SelectField(
+                    col_name, choices=choices, **field_kwargs
+                )
+            elif isinstance(col_type, Text) or (
                 hasattr(col_type, "length")
                 and col_type.length
                 and col_type.length > 255

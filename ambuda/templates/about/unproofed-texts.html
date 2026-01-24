@@ -1,0 +1,51 @@
+{% extends 'base-text.html' %}
+{% import "macros/icons.html" as i %}
+
+
+{% block title %}{{ _('Privacy Policy') }} {{ _('| Ambuda') }}{% endblock %}
+
+
+{% block content %}
+<div class="prose">
+<h1>{{ _('Unproofed texts') }}</h1>
+
+<p>Ambuda's goal is to create a complete archive of Sanskrit literature. Since such an archive is
+massive and our team is small, we must balance the quality of a text with the speed at which we
+can publish it.
+
+<p>To better strike this balance and make Ambuda more useful, we have started publishing texts with
+minimal proofreading from a human expert. These <dfn>unproofed</dfn> texts are marked with a red
+circle that links back to this page:
+
+{{ i.i_exclamation_circle() }}
+<figure class="text-center">
+<p><b class="text-xl">Example text</b> {{ i.unproofed_text_icon() }}<p>
+<figcaption>Example unproofed text. The red circle icon shows that the text is unproofed.</figcaption>
+</figure>
+
+<p>Unproofed texts have a higher defect rate than our other texts and may even have severe errors.
+We do not recommend them for beginners or for scholarly work. But despite their shortcomings, we
+are publishing them anyway for three reasons.
+
+<p><strong>First, unproofed texts are good enough for many use cases.</strong> Optical character recognition &mdash;
+the process by which a computer converts a scanned book to readable text &mdash; has historically
+been of middling quality when applied to Sanskrit texts. But recently, Sanskrit OCR has substantially
+improved, and in our experience it is now common for a processed page to have zero mistakes. We
+think the current defect rate is acceptable for skimming, light reading, machine translation, and
+careful use by expert readers.</p>
+
+<p><strong>Second, unproofed texts are clearly marked and link back to a source of truth.</strong> All of our
+unproofed texts are integrated with our proofing environment, which links each verse and paragraph
+back to the scanned page it came from. This integration means that a user who has suspicions about
+what they're reading can quickly verify what the text actually says.</p>
+
+<p><strong>Third, unproofed texts can improve over time.</strong> Our proofing environment lets users edit and
+improve a text directly. Our proofing environment also includes automatic checks and rules that are
+becoming more capable over time. While our automatic checks will likely never reach the level of a
+human expert, they can narrow the gap and even uncover errors that a human expert is likely to miss.
+
+<p>On this basis, we plan to massively expand our library with unproofed texts and gradually refine
+them over time.</p>
+
+
+{% endblock %}

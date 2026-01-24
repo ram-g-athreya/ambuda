@@ -9,6 +9,13 @@ from enum import StrEnum
 from typing import Iterable
 
 from ambuda import database as db
+from ambuda.utils.xml_validation import (
+    BlockType,
+    InlineType,
+    TEITag,
+    ValidationResult,
+    validate_proofing_xml,
+)
 
 
 DEFAULT_PRINT_PAGE_NUMBER = "-"
@@ -20,132 +27,6 @@ DEFAULT_PRINT_PAGE_NUMBER = "-"
 # directly type harvard kyoto?
 # footnote (^\d+.)
 # break apart multiple footnotes
-
-
-# Keep in sync with prosemirror-editor.ts::BLOCK_TYPES
-class BlockType(StrEnum):
-    PARAGRAPH = "p"
-    VERSE = "verse"
-    FOOTNOTE = "footnote"
-    HEADING = "heading"
-    TRAILER = "trailer"
-    TITLE = "title"
-    SUBTITLE = "subtitle"
-    IGNORE = "ignore"
-    METADATA = "metadata"
-
-
-# Keep in sync with marks-config.ts::INLINE_MARKS
-class InlineType(StrEnum):
-    ERROR = "error"
-    FIX = "fix"
-    SPEAKER = "speaker"
-    STAGE = "stage"
-    REF = "ref"
-    FLAG = "flag"
-    CHAYA = "chaya"
-
-
-@dc.dataclass
-class ValidationSpec:
-    children: set[str]
-    attrib: set[str]
-
-
-class ValidationType(StrEnum):
-    WARNING = "warning"
-    ERROR = "error"
-
-
-@dc.dataclass
-class ValidationResult:
-    type: ValidationType
-    message: str
-
-    @staticmethod
-    def error(message: str) -> "ValidationResult":
-        return ValidationResult(type=ValidationType.ERROR, message=message)
-
-    @staticmethod
-    def warning(message: str) -> "ValidationResult":
-        return ValidationResult(type=ValidationType.WARNING, message=message)
-
-
-CORE_INLINE_TYPES = set(InlineType)
-VALIDATION_SPECS = {
-    "page": ValidationSpec(children=set(BlockType), attrib=set()),
-    BlockType.PARAGRAPH: ValidationSpec(
-        children=CORE_INLINE_TYPES,
-        attrib={"lang", "text", "n", "merge-next", "merge-text"},
-    ),
-    BlockType.VERSE: ValidationSpec(
-        children=CORE_INLINE_TYPES,
-        attrib={"lang", "text", "n", "merge-next", "merge-text"},
-    ),
-    BlockType.FOOTNOTE: ValidationSpec(
-        children=CORE_INLINE_TYPES, attrib={"lang", "text", "mark"}
-    ),
-    BlockType.HEADING: ValidationSpec(
-        children=CORE_INLINE_TYPES, attrib={"lang", "text", "n"}
-    ),
-    BlockType.TRAILER: ValidationSpec(
-        children=CORE_INLINE_TYPES, attrib={"lang", "text", "n"}
-    ),
-    BlockType.TITLE: ValidationSpec(
-        children=CORE_INLINE_TYPES, attrib={"lang", "text", "n"}
-    ),
-    BlockType.SUBTITLE: ValidationSpec(
-        children=CORE_INLINE_TYPES, attrib={"lang", "text", "n"}
-    ),
-    BlockType.IGNORE: ValidationSpec(
-        children=CORE_INLINE_TYPES, attrib={"lang", "text"}
-    ),
-    BlockType.METADATA: ValidationSpec(children=set(), attrib=set()),
-    **{
-        tag: ValidationSpec(children=set(InlineType), attrib=set())
-        for tag in InlineType
-    },
-}
-
-
-class TEITag(StrEnum):
-    TITLE = "title"
-    HEAD = "head"
-    TRAILER = "trailer"
-
-    LG = "lg"
-    P = "p"
-
-    SP = "sp"
-    STAGE = "stage"
-    SPEAKER = "stage"
-
-    CHOICE = "choice"
-    SEG = "seg"
-    SIC = "sic"
-    CORR = "corr"
-    SUPPLIED = "supplied"
-
-    REF = "ref"
-    NOTE = "note"
-
-
-# TODO: this is unused. hook it up somewhere.
-TEI_XML_VALIDATION_SPEC = {
-    TEITag.SP: ValidationSpec(
-        children={TEITag.SPEAKER, TEITag.P, TEITag.LG, TEITag.STAGE}, attrib={"n"}
-    ),
-    TEITag.STAGE: ValidationSpec(children=set(), attrib={"rend"}),
-    TEITag.LG: ValidationSpec(children={"l", "note", "choice", "ref"}, attrib={"n"}),
-    TEITag.P: ValidationSpec(children={"note", "choice", "ref"}, attrib={"n"}),
-    TEITag.CHOICE: ValidationSpec(
-        children={TEITag.SEG, TEITag.CORR, TEITag.SIC}, attrib={"type"}
-    ),
-    TEITag.SEG: ValidationSpec(children=set(), attrib={"xml:lang"}),
-    TEITag.HEAD: ValidationSpec(children=set(), attrib=set()),
-    TEITag.TITLE: ValidationSpec(children=set(), attrib=set()),
-    TEITag.TRAILER: ValidationSpec(children=set(), attrib=set()),
-}
 
 
 @dc.dataclass
@@ -244,56 +125,6 @@ class Filter:
                 return False
 
         return _matches(self.predicate)
-
-
-def validate_proofing_xml(content: str) -> list[ValidationResult]:
-    results = []
-
-    try:
-        root = DET.fromstring(content)
-    except ET.ParseError as e:
-        results.append(ValidationResult.error(f"XML parse error: {e}"))
-        return results
-
-    # Root tag should always be "page"
-    if root.tag != "page":
-        results.append(
-            ValidationResult.error(f"Root tag must be 'page', got '{root.tag}'")
-        )
-        return results
-
-    def _validate_element(el, tag, path=()):
-        current_path = path + (tag,)
-
-        if tag not in VALIDATION_SPECS:
-            results.append(
-                ValidationResult.error(
-                    f"Unknown element '{tag}' at {'/'.join(current_path)}"
-                )
-            )
-            return
-
-        spec = VALIDATION_SPECS[tag]
-
-        for attr in el.attrib:
-            if attr not in spec.attrib:
-                results.append(
-                    ValidationResult.error(
-                        f"Unexpected attribute '{attr}' on element '{tag}' at {'/'.join(current_path)}"
-                    )
-                )
-
-        for child in el:
-            if child.tag not in spec.children:
-                results.append(
-                    ValidationResult.error(
-                        f"Unexpected child element '{child.tag}' in '{tag}' at {'/'.join(current_path)}"
-                    )
-                )
-            _validate_element(child, child.tag, current_path)
-
-    _validate_element(root, "page")
-    return results
 
 
 def _inner_xml(el):
@@ -480,6 +311,7 @@ def is_verse(text: str) -> bool:
     else:
         return False
 
+
 @dc.dataclass
 class ProofProject:
     """A structured project from the proofreading environment."""
@@ -662,11 +494,11 @@ def _rewrite_block_to_tei_xml(xml: ET.Element, image_number: int):
         i += 1
 
     if xml.tag == BlockType.VERSE:
-        xml.tag = "lg"
+        xml.tag = TEITag.LG
     elif xml.tag == BlockType.HEADING:
-        xml.tag = "head"
+        xml.tag = TEITag.HEAD
     elif xml.tag == BlockType.FOOTNOTE:
-        xml.tag = "note"
+        xml.tag = TEITag.NOTE
 
     # <p> text normalization
     if xml.tag == "p":
@@ -687,7 +519,7 @@ def _rewrite_block_to_tei_xml(xml: ET.Element, image_number: int):
         except StopIteration:
             chaya = None
         if chaya is not None:
-            choice = ET.Element("choice")
+            choice = ET.Element(TEITag.CHOICE)
             choice.attrib["type"] = "chaya"
 
             prakrit = ET.SubElement(choice, "seg")

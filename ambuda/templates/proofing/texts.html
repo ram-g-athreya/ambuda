@@ -1,6 +1,7 @@
 {% extends 'proofing/base.html' %}
 {% import "macros/components.html" as mc %}
 {% import "macros/proofing.html" as m %}
+{% import "macros/icons.html" as i %}
 
 {% block title %}{{ mc.title(_('Published Texts')) }}{% endblock %}
 
@@ -14,6 +15,7 @@
 </div>
 
 {% if texts %}
+{{ i.i_exclamation_circle() }}
 <div class="overflow-x-auto">
   <table class="min-w-full border-collapse border border-slate-300">
     <thead class="bg-slate-100">
@@ -29,7 +31,12 @@
       {% for text in texts %}
       <tr class="hover:bg-slate-50">
         <td class="border border-slate-300 p-2">
-          <a href="{{ url_for('texts.text', slug=text.slug) }}" class="text-sky-900 hover:underline">{{ text.title }}</a>
+          <a href="{{ url_for('texts.text', slug=text.slug) }}" class="text-sky-900 hover:underline">
+            {{ text.title }}
+          </a>
+          {% if text.is_p0 %}
+            {{ i.unproofed_text_icon() }}
+          {% endif %}
         </td>
         <td class="border border-slate-300 p-2">
           {% if text.project %}

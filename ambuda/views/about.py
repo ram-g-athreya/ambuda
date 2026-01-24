@@ -64,3 +64,8 @@ def terms():
 @bp.route("/privacy-policy")
 def privacy():
     return render_template("about/privacy.html")
+
+
+@bp.route("/unproofed-texts")
+def unproofed_texts():
+    return render_template("about/unproofed-texts.html")

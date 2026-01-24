@@ -1,5 +1,5 @@
 {% extends 'base-text.html' %}
-{% import 'macros/library.html' as m %}
+{% import 'macros/texts.html' as m %}
 
 
 {% block title %}{{ text.title | devanagari }} {{ _('| Ambuda') }}{% endblock %}
@@ -32,10 +32,18 @@
       {% endif %}
 
       <div class="p-4 {{ status_class }} rounded">
-        <div class="font-semibold text-gray-900">{{ result.text }}</div>
+        <div class="font-semibold text-gray-900">{{ result.description }}</div>
         <div class="text-sm mt-1 {{ icon_class }}">
           <span class="font-bold">{{ icon }}</span> {{ status_text }} ({{ result.num_ok }}/{{ result.num_total }})
         </div>
+
+        {% if result.errors %}
+        <ul class="{{ icon_class }} text-sm">
+          {% for error in result.errors %}
+          <li>{{ error }}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
       </div>
     {% endfor %}
   </div>

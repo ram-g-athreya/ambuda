@@ -31,7 +31,8 @@ from ambuda.enums import SitePageStatus
 from ambuda.utils import google_ocr, llm_structuring, project_utils, structuring
 from ambuda.utils.diff import revision_diff
 from ambuda.utils.revisions import EditError, add_revision
-from ambuda.utils.structuring import ProofPage, validate_proofing_xml
+from ambuda.utils.structuring import ProofPage
+from ambuda.utils.xml_validation import validate_proofing_xml
 from ambuda.views.api import bp as api
 from ambuda.views.site import bp as site
 

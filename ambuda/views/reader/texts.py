@@ -25,7 +25,7 @@ from ambuda.utils import text_exports
 from ambuda.utils.text_exports import ExportType, EXPORTS
 from ambuda.utils import xml
 from ambuda.utils.json_serde import AmbudaJSONEncoder
-from ambuda.utils.text_quality import validate
+from ambuda.utils.text_validation import validate
 from ambuda.views.api import bp as api
 from ambuda.views.reader.schema import Block, Section
 from ambuda.s3_utils import S3Path

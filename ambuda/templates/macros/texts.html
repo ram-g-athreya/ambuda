@@ -1,19 +1,72 @@
+{% import 'macros/components.html' as components %}
+{% import "macros/icons.html" as i %}
+
+
+{% macro text_header(text) %}
+<header class="text-center my-16">
+{% if text.parent %}
+  <h1 class="font-bold text-5xl x-deva">
+    {{ text.parent.title | devanagari }}
+  </h1>
+  <p class="text-xl my-8 text-slate-500">(
+    <a class="hover:underline" href="{{ url_for('texts.text', slug=text.parent.slug) }}">
+      {{- text.title -}}
+    </a>
+    &mdash;
+    {% if text.language == "hi" %}Hindi{% endif %}
+    {% if text.language == "en" %}English{% endif %}
+  )</p>
+{% else %}
+  <h1 class="font-bold text-5xl x-deva">
+    {{ text.title | devanagari }}
+  </h1>
+  {% if text.is_p0 %}
+  <aside class="bg-red-100 rounded text-red-800 p-2 mt-8">
+    {{ i.i_exclamation_circle() }}
+    <p>
+      <svg class="inline text-red-300" width="16" height="16"><use href="#exclamation-circle"></use></svg>
+      This text is <a class="underline" href="{{ url_for('about.unproofed_texts') }}">unproofed</a>.
+    </p>
+  </aside>
+  {% endif %}
+{% endif %}
+</header>
+{% endmacro %}
+
+
+{% macro text_tabs(text, active) %}
+{% set routes = [
+  ("contents",         _("Contents"),       url_for("texts.text", slug=text.slug)),
+  ("resources",        _("Resources"),      url_for("texts.text_resources", slug=text.slug)),
+  ("about",     pgettext('texts', "About"), url_for("texts.text_about", slug=text.slug)),
+] %}
+<div class="mt-8">
+{{ components.tabs(routes, active) }}
+</div>
+{% endmacro %}
+
+
 {# List of all texts #}
 {% macro all_texts(text_entries) %}
 <ul>
 {% for entry in text_entries %}
 <li class="even:bg-slate-50 p-2">
-  <h2>
-    {% set url = url_for('texts.text', slug=entry.text.slug) %}
-    <a href="{{ url }}" class="hover:underline flex justify-between">
-      <span class="text-xl">{{ entry.text.title | devanagari }}</span>
-
-      {% if entry.author or entry.genre %}
-      <span class="text-slate-500">
-        {% if entry.author %} {{ entry.author.name }} {% endif %}
-      </span>
+  <h2 class="flex justify-between">
+    <span>
+      {% set url = url_for('texts.text', slug=entry.text.slug) %}
+      <a href="{{ url }}" class="hover:underline text-xl">
+        {{- entry.text.title | devanagari -}}
+      </a>
+      {% if entry.text.is_p0 %}
+      {{ i.unproofed_text_icon() }}
       {% endif %}
-     </a>
+    </span>
+
+    {% if entry.author or entry.genre %}
+    <span class="text-slate-500">
+      {% if entry.author %} {{ entry.author.name }} {% endif %}
+    </span>
+    {% endif %}
   </h2>
 
   {% if entry.children %}
@@ -37,6 +90,7 @@
 
 
 {% macro grouped_texts(grouped_entries) %}
+  {{ i.i_exclamation_circle() }}
   {% for heading, entries in grouped_entries.items() %}
     {% if entries %}
     <h2 class="text-slate-400 font-bold text-3xl my-8">{{ heading }}</h2>

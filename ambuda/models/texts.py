@@ -103,6 +103,11 @@ class Text(Base):
         return len(self.sections) < 20
 
     @property
+    def is_p0(self) -> bool:
+        """Return whether the text is unproofed."""
+        return self.status == TextStatus.P0
+
+    @property
     def has_parse_data(self) -> bool:
         from ambuda.models.parse import BlockParse, TokenBlock
 
@@ -129,6 +134,15 @@ def validate_text(mapper, connection, text):
             json.loads(text.config)
         except (TypeError, ValueError) as e:
             raise ValueError(f"Text.config must be a valid JSON document: {e}")
+    if text.status:
+        try:
+            TextStatus(text.status)
+        except ValueError:
+            valid_values = ", ".join([s.value for s in TextStatus])
+            raise ValueError(
+                f"Text.status must be a valid TextStatus value. "
+                f"Got '{text.status}', expected one of: {valid_values}"
+            )
 
 
 class TextSection(Base):
