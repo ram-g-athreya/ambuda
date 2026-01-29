@@ -141,7 +141,12 @@ def test_from_content_and_page_id():
         ("foo- bar", "<page>\n<p><speaker>foo-</speaker> bar</p>\n</page>"),
         ("foo-", "<page>\n<p>foo-</p>\n</page>"),
         # stage
-        ("foo (bar)", "<page>\n<p>foo <stage>(bar)</stage></p>\n</page>"),
+        ("(bar)", "<page>\n<p><stage>(bar)</stage></p>\n</page>"),
+        ("foo (bar) biz", "<page>\n<p>foo <stage>(bar)</stage> biz</p>\n</page>"),
+        (
+            "foo\n(bar)\nbiz",
+            "<page>\n<p>foo</p>\n<p><stage>(bar)</stage></p>\n<p>biz</p>\n</page>",
+        ),
         # chaya
         ("foo [bar]", "<page>\n<p>foo <chaya>[bar]</chaya></p>\n</page>"),
         ("foo [bar\nbiz]", "<page>\n<p>foo <chaya>[bar\nbiz]</chaya></p>\n</page>"),
@@ -149,6 +154,9 @@ def test_from_content_and_page_id():
 )
 def test_split_plain_text_to_blocks(input, expected):
     blocks = s.split_plain_text_to_blocks(
-        input, match_chaya=True, match_stage=True, match_speaker=True
+        input,
+        match_chaya=True,
+        match_stage=True,
+        match_speaker=True,
     )
     assert P(id=0, blocks=blocks).to_xml_string() == expected

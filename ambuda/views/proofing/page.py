@@ -36,6 +36,7 @@ from ambuda.utils.project_structuring import ProofPage, split_plain_text_to_bloc
 from ambuda.utils.xml_validation import validate_proofing_xml
 from ambuda.views.api import bp as api
 from ambuda.views.site import bp as site
+from ambuda.views.proofing.decorators import p2_required
 
 bp = Blueprint("page", __name__)
 
@@ -379,8 +380,8 @@ def ocr_api(project_slug, page_slug):
     return ret
 
 
-@api.route("/llm-structuring/<project_slug>/<page_slug>/")
-@login_required
+@api.route("/llm-structuring/<project_slug>/<page_slug>/", methods=["POST"])
+@p2_required
 def llm_structuring_api(project_slug, page_slug):
     project_ = q.project(project_slug)
     if project_ is None:
@@ -431,15 +432,10 @@ def auto_structure_api():
             match_stage=req.match_stage,
             match_speaker=req.match_speaker,
             match_chaya=req.match_chaya,
+            ignore_non_devanagari=True,
         )
         page = ProofPage(id=0, blocks=blocks)
         xml = page.to_xml_string()
-        print(text)
-        print(req)
-        print("-" * 30)
-        print(blocks)
-        print("-" * 30)
-        print(xml)
         return jsonify({"content": xml})
 
     except Exception as e:

@@ -451,6 +451,7 @@ export default () => ({
     const currentContent = Alpine.raw(this.editor).getText();
 
     const content = await fetch(url, {
+      method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },

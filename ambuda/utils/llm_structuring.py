@@ -10,6 +10,7 @@ tags and attributes.
 **CORE DIRECTIVES (STRICTLY ENFORCED):**
 
 - Preserve the original text content exactly. Add only XML tags, attributes, and necessary whitespace.
+    - Exception: you may delete clearly irrelevant text.
 - Do not translate, modify, remove, or reorder any text content, including special characters.
 - Return ONLY the structured XML text with **no preamble, explanation, or commentary**.
 - If XML tags are present within the page text already, preserve them EXACTLY.
@@ -36,34 +37,24 @@ necessary, you may split a block of text into multiple blocks by inserting newli
 - Use <ref target="..." /> for inline footnotes.
   Example: if [^१.] appears in a verse or paragraph, convert it to <ref target="१." />.
   EXACTLY preserve the text in [^...] as the `target` attribute value.
+- Use <stage> for stage directions. Wrap parentheses if present.
+- Use <speaker> for speakers. Wrap dashes if present.
+- Use <chaya> for Sanskrit translations of Prakrit text. Wrap brackets if present.
 
 **IV. TAG ATTRIBUTES:**
 
-- `text`
-  - Values: "A", "B", "C", etc.
-  - REQUIRED for every block tag. Assign the appropriate text identifier based on the
-    CUSTOM INSTRUCTIONS below.
-- `ref`
-  - Values: "before", "after".
-  - If the block is a translation or commentary for the block *preceding* it, use "before".
-  - If the block is a translation or commentary for the block *following* it, use "after".
-- `scope`
-  - Values: "partial"
-  - Add scope="partial" if a block clearly continues onto the next page.
-
-**V. CUSTOM INSTRUCTIONS FOR THIS DOCUMENT:**
-
-<custom-instructions>
-This document contains two texts:
-- text A is the original Sanskrit
-- text B is a Hindi translation.
-</custom-instructions>
+- `merge-next`
+  - Values: "true"
+  - Add merge-next="true" if a block clearly continues onto the next page. Otherwise, leave
+    the attribute unset.
 
 TEXT TO STRUCTURE FOLLOWS:
 
-<page-to-structure>
+<text-to-structure>
+
 {content}
-</page-to-structure>
+
+</text-to-structure>
 """
 
 

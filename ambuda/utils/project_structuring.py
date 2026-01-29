@@ -214,7 +214,11 @@ def _is_verse(text: str) -> bool:
 
 
 def split_plain_text_to_blocks(
-    text: str, match_stage=False, match_speaker=False, match_chaya=False
+    text: str,
+    match_stage=False,
+    match_speaker=False,
+    match_chaya=False,
+    ignore_non_devanagari=False,
 ) -> list[ProofBlock]:
     DANDA = "\u0964"
     DOUBLE_DANDA = "\u0965"
@@ -232,22 +236,49 @@ def split_plain_text_to_blocks(
     types = {}
     id = 0
     for i, line in enumerate(lines):
-        if re.match(r"^[०-९]+\.", line):
+        if match_speaker:
+            if m := re.fullmatch(r"^(\S+\s*[-–])(.+)", line):
+                # Speaker --> start of new block
+                id += 1
+                lines[i] = f"<speaker>{m.group(1)}</speaker>{m.group(2)}"
+                ids[i] = id
+
+        if match_stage:
+            if m := re.match(r"(.*)(\(.*?\))(.*)", line):
+                lines[i] = f"{m.group(1)}<stage>{m.group(2)}</stage>{m.group(3)}"
+                if not m.group(1) and not m.group(3):
+                    # Stage without other elements --> separate block
+                    id += 1
+                    ids[i] = id
+                    id += 1
+                    continue
+
+        if re.fullmatch(r"[०-९]+", line) or (
+            ignore_non_devanagari and re.fullmatch("[^\u0900-\u097f]*", line)
+        ):
+            # Ignore numbers and non-Devanagari
+            id += 1
+            ids[i] = id
+            types[id] = "ignore"
+            id += 1
+        elif re.match(r"^[०-९]+\.", line):
             # Footnote
-            key = f"f{id}"
-            types[key] = "footnote"
+            id += 1
+            types[id] = "footnote"
             for j in range(i, len(lines)):
                 # Footnote
-                ids[j] = key
+                ids[j] = id
+            id += 1
+        elif re.fullmatch(r"\(.*\)", line):
             id += 1
         elif _is_verse_double_danda(line):
             # Verse?
             if i > 0 and _is_verse_danda(lines[i - 1]):
+                id += 1
                 # two-line verse
                 for j in (i, i - 1):
-                    key = f"v{id}"
-                    ids[j] = key
-                    types[key] = "verse"
+                    ids[j] = id
+                    types[id] = "verse"
                 id += 1
             elif (
                 i >= 3
@@ -255,37 +286,28 @@ def split_plain_text_to_blocks(
                 and _is_verse_danda(lines[i - 2])
                 and DANDA not in lines[i - 1]
             ):
+                id += 1
                 # four-line verse
                 for j in (i, i - 1, i - 2, i - 3):
-                    key = f"v{id}"
-                    ids[j] = key
-                    types[key] = "verse"
+                    ids[j] = id
+                    types[id] = "verse"
                 id += 1
+            else:
+                # Base case
+                ids[i] = id
+        else:
+            # Base case
+            ids[i] = id
 
     groups = {}
-    auto_id = 0
     for k, v in zip(ids, lines):
-        if k is None:
-            k = auto_id
-        else:
-            auto_id += 1
         groups.setdefault(k, []).append(v)
 
-    # Step 2: process each block.
+    # Step 2b: process each block.
     blocks = []
     for key, group in groups.items():
         type = types.get(key, "p")
         content = "\n".join(group)
-
-        if match_stage:
-            pattern = r"(\(.*?\))"
-            replacement = r"<stage>\1</stage>"
-            content = re.sub(pattern, replacement, content)
-
-        if match_speaker:
-            pattern = r"^(\S+\s*[-–])(.+)"
-            replacement = r"<speaker>\1</speaker>\2"
-            content = re.sub(pattern, replacement, content)
 
         if match_chaya:
             pattern = r"(\[.*?\])"
