@@ -463,7 +463,7 @@ class BlockView {
 
     // Create content area
     this.contentDOM = document.createElement('div');
-    this.contentDOM.className = 'pm-content-dom';
+    this.updateContentDOMClasses();
     this.contentDOM.style.fontSize = `${this.editor.textZoom}rem`;
     this.contentDOM.contentEditable = 'true';
     this.dom.appendChild(this.contentDOM);
@@ -487,6 +487,14 @@ class BlockView {
     }
   }
 
+  updateContentDOMClasses() {
+    const blockType = this.node.attrs.type || 'p';
+    this.contentDOM.className = 'pm-content-dom';
+    if (blockType === 'ignore') {
+      this.contentDOM.classList.add('bg-gray-100', 'text-gray-500');
+    }
+  }
+
   updateNodeAttr(name: string, value: any) {
     const pos = this.getPos();
     if (pos === undefined) return;
@@ -503,6 +511,7 @@ class BlockView {
       if (this.node.attrs.merge_next) {
         this.dom.classList.add('bg-yellow-50', '!border-dashed');
       }
+      this.updateContentDOMClasses();
       this.updateFieldVisibility();
     }
 
@@ -527,6 +536,8 @@ class BlockView {
     if (node.attrs.merge_next) {
       this.dom.classList.add('bg-yellow-50', '!border-dashed');
     }
+
+    this.updateContentDOMClasses();
 
     // Update controls to match new node attrs
     if (this.typeSelect.value !== blockType) {

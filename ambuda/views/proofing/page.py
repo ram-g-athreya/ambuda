@@ -20,6 +20,7 @@ from flask import (
 from flask_babel import lazy_gettext as _l
 from flask_login import current_user, login_required
 from flask_wtf import FlaskForm
+from pydantic import BaseModel
 from werkzeug.exceptions import abort
 from wtforms import HiddenField, RadioField, StringField
 from wtforms.validators import DataRequired, ValidationError
@@ -28,15 +29,24 @@ from wtforms.widgets import TextArea
 from ambuda import database as db
 from ambuda import queries as q
 from ambuda.enums import SitePageStatus
-from ambuda.utils import google_ocr, llm_structuring, project_utils, structuring
+from ambuda.utils import google_ocr, llm_structuring, project_utils, project_structuring
 from ambuda.utils.diff import revision_diff
 from ambuda.utils.revisions import EditError, add_revision
-from ambuda.utils.structuring import ProofPage
+from ambuda.utils.project_structuring import ProofPage, split_plain_text_to_blocks
 from ambuda.utils.xml_validation import validate_proofing_xml
 from ambuda.views.api import bp as api
 from ambuda.views.site import bp as site
 
 bp = Blueprint("page", __name__)
+
+
+class AutoStructureRequest(BaseModel):
+    """Request model for auto-structuring page content."""
+
+    content: str
+    match_stage: bool = False
+    match_speaker: bool = False
+    match_chaya: bool = False
 
 
 def page_xml_validator(form, field):
@@ -402,101 +412,39 @@ def llm_structuring_api(project_slug, page_slug):
 @login_required
 def auto_structure_api():
     """Apply auto-structuring heuristics to the page content."""
-    data = request.json
-    if not data:
+    if not request.json:
         return jsonify({"error": "No data provided"}), 400
 
-    content = data.get("content", "")
-    options = data.get("options", {})
-
-    if not content:
-        return jsonify({"error": "No content provided"}), 400
+    try:
+        req = AutoStructureRequest.model_validate(request.json)
+    except Exception as e:
+        return jsonify({"error": f"Invalid request: {str(e)}"}), 400
 
     try:
-        root = DET.fromstring(content)
+        root = DET.fromstring(req.content)
         if root.tag != "page":
             return jsonify({"error": "Invalid XML: root tag must be 'page'"}), 400
 
-        for block in root:
-            if block.tag not in (
-                "p",
-                "verse",
-                "heading",
-                "title",
-                "subtitle",
-                "trailer",
-            ):
-                continue
-
-            block_text = _get_element_text(block)
-
-            if options.get("stageDirections"):
-                block_text = _mark_stage_directions(block_text, block)
-
-            if options.get("speakers"):
-                block_text = _mark_speakers(block_text, block)
-
-            if options.get("chaya"):
-                block_text = _mark_chaya(block_text, block)
-
-            _set_element_text(block, block_text)
-
-        import xml.etree.ElementTree as ET
-
-        structured_content = ET.tostring(root, encoding="unicode")
-        return jsonify({"content": structured_content})
+        text = "".join(root.itertext())
+        blocks = split_plain_text_to_blocks(
+            text,
+            match_stage=req.match_stage,
+            match_speaker=req.match_speaker,
+            match_chaya=req.match_chaya,
+        )
+        page = ProofPage(id=0, blocks=blocks)
+        xml = page.to_xml_string()
+        print(text)
+        print(req)
+        print("-" * 30)
+        print(blocks)
+        print("-" * 30)
+        print(xml)
+        return jsonify({"content": xml})
 
     except Exception as e:
         current_app.logger.error(f"Auto-structuring failed: {e}")
         return jsonify({"error": f"Auto-structuring failed: {str(e)}"}), 500
-
-
-def _get_element_text(el):
-    """Get the text content of an element, including child elements."""
-    parts = []
-    if el.text:
-        parts.append(el.text)
-    for child in el:
-        import xml.etree.ElementTree as ET
-
-        parts.append(ET.tostring(child, encoding="unicode"))
-    return "".join(parts)
-
-
-def _set_element_text(el, text):
-    """Set the text content of an element, preserving XML structure."""
-    import xml.etree.ElementTree as ET
-
-    el.clear()
-    el.tag = el.tag
-    try:
-        temp = DET.fromstring(f"<temp>{text}</temp>")
-        el.text = temp.text
-        for child in temp:
-            el.append(child)
-    except Exception:
-        el.text = text
-
-
-def _mark_stage_directions(text, block):
-    """Mark stage directions with (.*?) pattern."""
-    pattern = r"(\(.*?\))"
-    replacement = r"<stage>\1</stage>"
-    return re.sub(pattern, replacement, text)
-
-
-def _mark_speakers(text, block):
-    """Mark speakers with ^.*[-] pattern."""
-    pattern = r"^(\S+\s*[-–])"
-    replacement = r"<speaker>\1</speaker>"
-    return re.sub(pattern, replacement, text, flags=re.MULTILINE)
-
-
-def _mark_chaya(text, block):
-    """Mark chaya with \[.*?\] pattern."""
-    pattern = r"(\[.*?\])"
-    replacement = r"<chaya>\1</chaya>"
-    return re.sub(pattern, replacement, text)
 
 
 @api.route("/proofing/<project_slug>/<page_slug>/history")

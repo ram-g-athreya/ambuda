@@ -21,7 +21,7 @@ from ambuda.tasks.text_exports import create_text_export_inner
 from ambuda.utils import text_exports
 from ambuda.utils.text_exports import ExportType
 from ambuda.tasks.utils import LocalTaskStatus
-from ambuda.s3_utils import S3Path
+from ambuda.utils.s3 import S3Path
 
 # Load environment variables from .env file
 load_dotenv()

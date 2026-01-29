@@ -4,24 +4,11 @@ from dataclasses import dataclass
 
 import pytest
 
-from ambuda.utils import structuring as s
+from ambuda.utils import project_structuring as s
 
 
 P = s.ProofPage
 B = s.ProofBlock
-
-
-@dataclass
-class MockStatus:
-    name: str
-
-
-@dataclass
-class MockRevision:
-    id: int
-    page_id: int
-    content: str
-    status: MockStatus | None = None
 
 
 @pytest.mark.parametrize(
@@ -62,156 +49,6 @@ def test_validate_proofing_xml(input, expected):
     assert len(actual) == len(expected)
     for a, e in zip(actual, expected):
         assert re.search(e, a.message)
-
-
-@pytest.mark.parametrize(
-    "input,expected",
-    [
-        # Basic usage
-        ("<p>foo</p>", "<p>foo</p>"),
-        ("<heading>foo</heading>", "<head>foo</head>"),
-        ("<title>foo</title>", "<title>foo</title>"),
-        ("<trailer>foo</trailer>", "<trailer>foo</trailer>"),
-        # Other block types do not have a spec, so skip them for now.
-        # <p>
-        # <p> joins together text spread across multiple lines.
-        ("<p>foo \nbar</p>", "<p>foo bar</p>"),
-        ("<p>foo\nbar</p>", "<p>foo bar</p>"),
-        ("<p>foo \n bar</p>", "<p>foo bar</p>"),
-        # `-` at the end of a line joins words together across lines.
-        ("<p>foo-\nbar</p>", "<p>foobar</p>"),
-        ("<p>foo-bar\nbiz</p>", "<p>foo-bar biz</p>"),
-        # <p> should respect and retain inline marks when joining text.
-        ("<p><fix>foo</fix> \n bar</p>", "<p><supplied>foo</supplied> bar</p>"),
-        # <lg>
-        # <lg> breaks down lines (separated by whitespace) into separate <l> elements.
-        ("<verse>foo</verse>", "<lg><l>foo</l></lg>"),
-        ("<verse>foo\nbar</verse>", "<lg><l>foo</l><l>bar</l></lg>"),
-        ("<verse>foo\nbar\nbiz</verse>", "<lg><l>foo</l><l>bar</l><l>biz</l></lg>"),
-        # <lg> should respect and retain inline marks when splitting lines.
-        (
-            "<verse>f<fix>oo</fix>oo\nbar</verse>",
-            "<lg><l>f<supplied>oo</supplied>oo</l><l>bar</l></lg>",
-        ),
-        # <lg> should respect and retain inline marks at the end of lines too.
-        (
-            "<verse>f<fix>oo</fix>\nbar</verse>",
-            "<lg><l>f<supplied>oo</supplied></l><l>bar</l></lg>",
-        ),
-        # <lg> should normalize whitespace to some extent.
-        (
-            "<verse>f<fix>oo</fix> \n bar</verse>",
-            "<lg><l>f<supplied>oo</supplied></l><l>bar</l></lg>",
-        ),
-        # TODO: too hard
-        # ("<verse>f<fix>oo\nbar</fix> biz</verse>", "<lg><l>f<supplied>oo</supplied></l><l><supplied>bar</supplied> biz</l></lg>"),
-        # <error> and <fix>
-        # Error and fix consecutively (despite whitespace) --> sic and corr
-        (
-            "<p>foo<error>bar</error> <fix>biz</fix> tail</p>",
-            "<p>foo<choice><sic>bar</sic><corr>biz</corr></choice> tail</p>",
-        ),
-        # Invariant to order.
-        (
-            "<p>foo<fix>biz</fix> <error>bar</error></p>",
-            "<p>foo<choice><sic>bar</sic><corr>biz</corr></choice></p>",
-        ),
-        # Error alone --> sic, with empty corr
-        (
-            "<p>foo<error>bar</error> tail</p>",
-            "<p>foo<choice><sic>bar</sic><corr /></choice> tail</p>",
-        ),
-        # Fix alone --> supplied (no corr)
-        ("<p>foo<fix>bar</fix></p>", "<p>foo<supplied>bar</supplied></p>"),
-        # Separate fix and error -- don't group into a single choice
-        (
-            "<p>foo<error>bar</error> biz <fix>baf</fix> tail</p>",
-            "<p>foo<choice><sic>bar</sic><corr /></choice> biz <supplied>baf</supplied> tail</p>",
-        ),
-        # <chaya>
-        (
-            "<p>aoeu<x>foo</x><chaya>asdf<y>bar</y></chaya></p>",
-            '<p><choice type="chaya"><seg xml:lang="pra">aoeu<x>foo</x></seg><seg xml:lang="sa">asdf<y>bar</y></seg></choice></p>',
-        ),
-        # <speaker> converts the block type to <sp>. <speaker> is yanked out of the block into <sp>,
-        # preserving element order. The old block type is appended as a child to <sp>.
-        ("<p><speaker>foo</speaker></p>", "<sp><speaker>foo</speaker></sp>"),
-        (
-            "<p><speaker>foo</speaker>bar-\nbiz</p>",
-            "<sp><speaker>foo</speaker><p>barbiz</p></sp>",
-        ),
-        # <flag> --> <unclear>
-        ("<p><flag>foo</flag></p>", "<p><unclear>foo</unclear></p>"),
-        # No content --> don't preserve the <p>.
-        ("<p> <speaker>foo</speaker> </p>", "<sp><speaker>foo</speaker></sp>"),
-        (
-            "<verse><speaker>foo</speaker>bar</verse>",
-            "<sp><speaker>foo</speaker><lg><l>bar</l></lg></sp>",
-        ),
-    ],
-)
-def test_rewrite_block_to_tei_xml(input, expected):
-    xml = ET.fromstring(input)
-    s._rewrite_block_to_tei_xml(xml, 42)
-    actual = ET.tostring(xml)
-    assert expected.encode("utf-8") == actual
-
-
-@pytest.mark.parametrize(
-    "input,expected",
-    [
-        ("<p><speaker>foo</speaker></p>", "<sp><speaker>foo</speaker></sp>"),
-        ("<p><speaker>foo - </speaker></p>", "<sp><speaker>foo</speaker></sp>"),
-        ("<p><speaker> foo -– </speaker></p>", "<sp><speaker>foo</speaker></sp>"),
-    ],
-)
-def test_rewrite_block_to_tei_xml__speaker(input, expected):
-    xml = ET.fromstring(input)
-    s._rewrite_block_to_tei_xml(xml, 42)
-    actual = ET.tostring(xml)
-    assert expected.encode("utf-8") == actual
-
-
-@pytest.mark.parametrize(
-    "input,expected",
-    [
-        ("<p><stage>foo</stage></p>", "<p><stage>foo</stage></p>"),
-        ("<p><stage>(foo)</stage></p>", '<p><stage rend="parentheses">foo</stage></p>'),
-        (
-            "<p><stage> ( foo ) </stage></p>",
-            '<p><stage rend="parentheses">foo</stage></p>',
-        ),
-    ],
-)
-def test_rewrite_block_to_tei_xml__stage(input, expected):
-    xml = ET.fromstring(input)
-    s._rewrite_block_to_tei_xml(xml, 42)
-    actual = ET.tostring(xml)
-    assert expected.encode("utf-8") == actual
-
-
-@pytest.mark.parametrize(
-    "input,expected",
-    [
-        (
-            "<p><chaya>foo</chaya></p>",
-            '<p><choice type="chaya"><seg xml:lang="pra" /><seg xml:lang="sa">foo</seg></choice></p>',
-        ),
-        (
-            "<p><chaya>[foo]</chaya></p>",
-            '<p><choice type="chaya"><seg xml:lang="pra" /><seg xml:lang="sa" rend="brackets">foo</seg></choice></p>',
-        ),
-        (
-            "<p><chaya> [ foo ] </chaya></p>",
-            '<p><choice type="chaya"><seg xml:lang="pra" /><seg xml:lang="sa" rend="brackets">foo</seg></choice></p>',
-        ),
-    ],
-)
-def test_rewrite_block_to_tei_xml__chaya(input, expected):
-    xml = ET.fromstring(input)
-    s._rewrite_block_to_tei_xml(xml, 42)
-    actual = ET.tostring(xml)
-    assert expected.encode("utf-8") == actual
 
 
 @pytest.mark.parametrize(
@@ -288,166 +125,30 @@ def test_from_content_and_page_id():
     )
 
 
-def _test_create_tei_document(input, expected):
-    """Helper function for testing create_tei_document."""
-    revisions = []
-    for i, page_xml in enumerate(input):
-        revisions.append(MockRevision(id=i, page_id=i, content=page_xml))
-
-    page_numbers = [str(x + 1) for x in range(len(revisions))]
-    tei_doc, _errors, _page_statuses = s.create_tei_document(
-        revisions, page_numbers, "(and)"
+@pytest.mark.parametrize(
+    "input,expected",
+    [
+        # p
+        ("foo", "<page>\n<p>foo</p>\n</page>"),
+        ("foo।bar।\nbizbaf॥", "<page>\n<p>foo।bar।\nbizbaf॥</p>\n</page>"),
+        # verse
+        (
+            "foo\nbar।\nbiz\nbaf॥",
+            "<page>\n<verse>foo\nbar।\nbiz\nbaf॥</verse>\n</page>",
+        ),
+        ("foobar।\nbizbaf॥", "<page>\n<verse>foobar।\nbizbaf॥</verse>\n</page>"),
+        # speaker
+        ("foo- bar", "<page>\n<p><speaker>foo-</speaker> bar</p>\n</page>"),
+        ("foo-", "<page>\n<p>foo-</p>\n</page>"),
+        # stage
+        ("foo (bar)", "<page>\n<p>foo <stage>(bar)</stage></p>\n</page>"),
+        # chaya
+        ("foo [bar]", "<page>\n<p>foo <chaya>[bar]</chaya></p>\n</page>"),
+        ("foo [bar\nbiz]", "<page>\n<p>foo <chaya>[bar\nbiz]</chaya></p>\n</page>"),
+    ],
+)
+def test_split_plain_text_to_blocks(input, expected):
+    blocks = s.split_plain_text_to_blocks(
+        input, match_chaya=True, match_stage=True, match_speaker=True
     )
-    tei_blocks = tei_doc.sections[0].blocks
-    assert tei_blocks == expected
-
-
-def test_create_tei_document__paragraph():
-    _test_create_tei_document(
-        ['<page><p n="1">अ</p></page>'],
-        [s.TEIBlock(xml='<p n="1">अ</p>', slug="1", page_id=0)],
-    )
-
-
-def test_create_tei_document__paragraph_with_concatenation():
-    _test_create_tei_document(
-        [
-            '<page><p n="1" merge-next="true">अ</p></page>',
-            '<page><p n="1">a</p></page>',
-        ],
-        [s.TEIBlock(xml='<p n="1">अ<pb n="-" />a</p>', slug="1", page_id=0)],
-    )
-
-
-def test_create_tei_document__paragraph_with_speaker():
-    _test_create_tei_document(
-        ['<page><p n="1"><speaker>foo</speaker> अ</p></page>'],
-        [
-            s.TEIBlock(
-                xml='<sp n="sp1"><speaker>foo</speaker><p n="1">अ</p></sp>',
-                slug="sp1",
-                page_id=0,
-            )
-        ],
-    )
-
-
-def test_create_tei_document__paragraph_with_speaker_and_concatenation():
-    _test_create_tei_document(
-        [
-            '<page><p n="1" merge-next="true"><speaker>foo</speaker> अ</p></page>',
-            '<page><p n="1">a</p></page>',
-        ],
-        [
-            s.TEIBlock(
-                xml='<sp n="sp1"><speaker>foo</speaker><p n="1">अ<pb n="-" />a</p></sp>',
-                slug="sp1",
-                page_id=0,
-            ),
-        ],
-    )
-
-
-def test_create_tei_document__verse():
-    _test_create_tei_document(
-        ['<page><verse n="1">अ</verse></page>'],
-        [s.TEIBlock(xml='<lg n="1"><l>अ</l></lg>', slug="1", page_id=0)],
-    )
-
-
-def test_create_tei_document__verse_with_concatenation():
-    _test_create_tei_document(
-        [
-            '<page><verse n="1" merge-next="true">अ</verse></page>',
-            '<page><verse n="1">a</verse></page>',
-        ],
-        [
-            s.TEIBlock(
-                xml='<lg n="1"><l>अ</l><pb n="-" /><l>a</l></lg>', slug="1", page_id=0
-            )
-        ],
-    )
-
-
-def test_create_tei_document__verse_with_fix_inline_element():
-    _test_create_tei_document(
-        ['<page><verse n="1">अ<fix>क</fix>ख</verse></page>'],
-        [
-            s.TEIBlock(
-                xml='<lg n="1"><l>अ<supplied>क</supplied>ख</l></lg>',
-                slug="1",
-                page_id=0,
-            )
-        ],
-    )
-
-
-def test_create_tei_document__paragraph_with_fix_inline_element():
-    _test_create_tei_document(
-        ['<page><p n="1">अ<fix>क</fix>ख</p></page>'],
-        [
-            s.TEIBlock(
-                xml='<p n="1">अ<supplied>क</supplied>ख</p>', slug="1", page_id=0
-            ),
-        ],
-    )
-
-
-def test_create_tei_document__autoincrement():
-    _test_create_tei_document(
-        ['<page><p n="1">a</p><p>b</p><p>c</p></page>'],
-        [
-            s.TEIBlock(xml='<p n="1">a</p>', slug="1", page_id=0),
-            s.TEIBlock(xml='<p n="2">b</p>', slug="2", page_id=0),
-            s.TEIBlock(xml='<p n="3">c</p>', slug="3", page_id=0),
-        ],
-    )
-
-
-def test_create_tei_document__autoincrement_with_dot_prefix():
-    _test_create_tei_document(
-        ['<page><p n="1.1">a</p><p>b</p><p>c</p></page>'],
-        [
-            s.TEIBlock(xml='<p n="1.1">a</p>', slug="1.1", page_id=0),
-            s.TEIBlock(xml='<p n="1.2">b</p>', slug="1.2", page_id=0),
-            s.TEIBlock(xml='<p n="1.3">c</p>', slug="1.3", page_id=0),
-        ],
-    )
-
-
-def test_create_tei_document__autoincrement_with_non_dot_prefix():
-    _test_create_tei_document(
-        ['<page><p n="p1">a</p><p>b</p><p>c</p></page>'],
-        [
-            s.TEIBlock(xml='<p n="p1">a</p>', slug="p1", page_id=0),
-            s.TEIBlock(xml='<p n="p2">b</p>', slug="p2", page_id=0),
-            s.TEIBlock(xml='<p n="p3">c</p>', slug="p3", page_id=0),
-        ],
-    )
-
-
-def test_create_tei_document__autoincrement_with_weird_prefix():
-    _test_create_tei_document(
-        ['<page><p n="foo">a</p><p>b</p><p>c</p></page>'],
-        [
-            s.TEIBlock(xml='<p n="foo">a</p>', slug="foo", page_id=0),
-            s.TEIBlock(xml='<p n="foo2">b</p>', slug="foo2", page_id=0),
-            s.TEIBlock(xml='<p n="foo3">c</p>', slug="foo3", page_id=0),
-        ],
-    )
-
-
-def test_create_tei_document__autoincrement_with_mixed_types():
-    _test_create_tei_document(
-        [
-            '<page><p n="p1">a</p><verse n="1">A</verse></page>',
-            "<page><p>b</p><verse>B</verse><p>c</p></page>",
-        ],
-        [
-            s.TEIBlock(xml='<p n="p1">a</p>', slug="p1", page_id=0),
-            s.TEIBlock(xml='<lg n="1"><l>A</l></lg>', slug="1", page_id=0),
-            s.TEIBlock(xml='<p n="p2">b</p>', slug="p2", page_id=1),
-            s.TEIBlock(xml='<lg n="2"><l>B</l></lg>', slug="2", page_id=1),
-            s.TEIBlock(xml='<p n="p3">c</p>', slug="p3", page_id=1),
-        ],
-    )
+    assert P(id=0, blocks=blocks).to_xml_string() == expected

@@ -24,10 +24,10 @@
 
   <div x-data="publishConfig()" class="not-prose">
     <form method="POST"
-          action="{{ url_for('proofing.project.publish_config', slug=project.slug) }}"
+          action="{{ url_for('proofing.publish.config', slug=project.slug) }}"
           @submit.prevent="submitForm">
 
-      <input type="hidden" name="publish_config" x-ref="hiddenConfig">
+      <input type="hidden" name="config" x-ref="hiddenConfig">
 
       <div class="mb-6">
         <div class="flex justify-between items-center mb-4">

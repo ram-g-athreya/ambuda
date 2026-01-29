@@ -213,9 +213,9 @@ export default () => ({
   normalizeReplaceSAvagraha: true,
   normalizeReplaceDoublePipe: true,
   // Auto-structure modal options
-  autoStructureStageDirections: true,
-  autoStructureSpeakers: true,
-  autoStructureChaya: true,
+  autoStructureMatchStage: true,
+  autoStructureMatchSpeaker: true,
+  autoStructureMatchChaya: true,
   // OCR bounding box highlighting
   boundingBoxes: [],
   boundingBoxLines: [],
@@ -689,11 +689,6 @@ export default () => ({
 
   async applyAutoStructure() {
     const content = Alpine.raw(this.editor).getText();
-    const options = {
-      stageDirections: this.autoStructureStageDirections,
-      speakers: this.autoStructureSpeakers,
-      chaya: this.autoStructureChaya,
-    };
 
     try {
       this.isRunningStructuring = true;
@@ -702,7 +697,12 @@ export default () => ({
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ content, options }),
+        body: JSON.stringify({
+          content,
+          match_stage: this.autoStructureMatchStage,
+          match_speaker: this.autoStructureMatchSpeaker,
+          match_chaya: this.autoStructureMatchChaya,
+        }),
       });
 
       if (!response.ok) {

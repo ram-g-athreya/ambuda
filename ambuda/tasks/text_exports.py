@@ -7,7 +7,7 @@ from pathlib import Path
 from celery import chain, group
 
 from ambuda import database as db
-from ambuda.s3_utils import S3Path
+from ambuda.utils.s3 import S3Path
 from ambuda.tasks import app
 from ambuda.tasks.utils import get_db_session
 from ambuda.utils import text_exports

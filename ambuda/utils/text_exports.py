@@ -15,7 +15,7 @@ from vidyut.lipi import transliterate, Scheme
 
 import ambuda.database as db
 from ambuda.utils.datetime import utc_datetime_timestamp
-from ambuda.s3_utils import S3Path
+from ambuda.utils.s3 import S3Path
 
 
 EXPORT_DIR = Path(__file__).parent

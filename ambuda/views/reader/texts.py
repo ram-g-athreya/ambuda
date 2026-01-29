@@ -18,7 +18,6 @@ from vidyut.lipi import transliterate, Scheme
 
 import ambuda.database as db
 import ambuda.queries as q
-from ambuda.consts import TEXT_CATEGORIES
 from ambuda.models.texts import TextConfig
 from ambuda.utils import text_utils
 from ambuda.utils import text_exports
@@ -28,7 +27,7 @@ from ambuda.utils.json_serde import AmbudaJSONEncoder
 from ambuda.utils.text_validation import validate
 from ambuda.views.api import bp as api
 from ambuda.views.reader.schema import Block, Section
-from ambuda.s3_utils import S3Path
+from ambuda.utils.s3 import S3Path
 from flask import current_app
 from sqlalchemy import select
 

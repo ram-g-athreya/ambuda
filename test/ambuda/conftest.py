@@ -9,7 +9,7 @@ from sqlalchemy.engine import Engine
 
 import ambuda.database as db
 from ambuda import create_app
-from ambuda.consts import BOT_USERNAME, TEXT_CATEGORIES
+from ambuda.consts import BOT_USERNAME
 from ambuda.queries import get_engine, get_session
 from ambuda.seed.lookup import page_status as page_status_seeding
 from ambuda.seed.lookup import role as role_seeding
@@ -45,13 +45,6 @@ def initialize_test_db():
     text = db.Text(slug="pariksha", title="parIkSA")
     session.add(text)
     session.flush()
-
-    # Create stubs for all texts so that texts.index doesn't break
-    for _category, slugs in TEXT_CATEGORIES.items():
-        for slug in slugs:
-            t = db.Text(slug=slug, title=slug)
-            session.add(t)
-            session.flush()
 
     section = db.TextSection(text_id=text.id, slug="1", title="adhyAyaH 1")
     session.add(section)

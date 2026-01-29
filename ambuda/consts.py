@@ -31,38 +31,6 @@ class Locale:
     text: str
 
 
-#: Defines a rough taxonomy of texts.
-#:
-#: This taxonomy is a temporary measure, and soon we will move this data into
-#: the database and avoid hard-coding a lists of texts.
-TEXT_CATEGORIES = {
-    "itihasa": [
-        "ramayanam",
-        "mahabharatam",
-    ],
-    "kavya": [
-        "amarushatakam",
-        "kiratarjuniyam",
-        "kumarasambhavam",
-        "kokilasandesha",
-        "caurapancashika",
-        "bhattikavyam",
-        "meghadutam-kale",
-        "mukundamala",
-        "raghuvamsham",
-        "shatakatrayam",
-        "shishupalavadham",
-        "saundaranandam",
-        "hamsadutam",
-    ],
-    "upanishat": ["shivopanishat"],
-    "anye": [
-        "bodhicaryavatara",
-        "catuhshloki",
-    ],
-}
-
-
 #: The username for our internal bot user.
 
 #: `ambuda-bot` performs background tasks like OCR. We assign these tasks to a

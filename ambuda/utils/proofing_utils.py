@@ -1,3 +1,5 @@
+"""TODO: this is deprecated, move toward project_structuring.py"""
+
 from collections.abc import Iterator
 from datetime import date
 

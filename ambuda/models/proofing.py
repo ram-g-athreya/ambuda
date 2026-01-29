@@ -10,7 +10,7 @@ from sqlalchemy import Text as Text_
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 
 from ambuda.models.base import Base, foreign_key, pk, same_as
-from ambuda.s3_utils import S3Path
+from ambuda.utils.s3 import S3Path
 
 
 def string():
