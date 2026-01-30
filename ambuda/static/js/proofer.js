@@ -8,6 +8,18 @@ import routes from './routes.js';
 
 const CONFIG_KEY = 'proofing-editor';
 
+function fuzzyMatch(query, text) {
+  const lowerText = text.toLowerCase();
+  const lowerQuery = query.toLowerCase();
+  let ti = 0;
+  for (let qi = 0; qi < lowerQuery.length; qi++) {
+    const idx = lowerText.indexOf(lowerQuery[qi], ti);
+    if (idx < 0) return false;
+    ti = idx + 1;
+  }
+  return true;
+}
+
 const ImageLayout = {
   Left: 'image-left',
   Right: 'image-right',
@@ -216,6 +228,8 @@ export default () => ({
   autoStructureMatchStage: true,
   autoStructureMatchSpeaker: true,
   autoStructureMatchChaya: true,
+  // Track bounding box: auto-scroll image to show current bounding box
+  trackBoundingBox: false,
   // OCR bounding box highlighting
   boundingBoxes: [],
   boundingBoxLines: [],
@@ -277,7 +291,10 @@ export default () => ({
       { label: 'Edit > Delete active block', action: () => this.deleteBlock() },
       { label: 'Edit > Move block up', action: () => this.moveBlockUp() },
       { label: 'Edit > Move block down', action: () => this.moveBlockDown() },
+      { label: 'Edit > Merge block up', action: () => this.mergeBlockUp() },
+      { label: 'Edit > Merge block down', action: () => this.mergeBlockDown() },
       ...markCommands,
+      { label: 'View > Track bounding box', action: () => this.toggleTrackBoundingBox() },
       { label: 'View > Show image on left', action: () => this.displayImageOnLeft() },
       { label: 'View > Show image on right', action: () => this.displayImageOnRight() },
       { label: 'View > Show image on top', action: () => this.displayImageOnTop() },
@@ -289,11 +306,9 @@ export default () => ({
   },
 
   getFilteredCommands() {
-    const query = this.commandPaletteQuery.toLowerCase();
+    const query = this.commandPaletteQuery;
     if (!query) return this.getCommands();
-    return this.getCommands().filter(cmd =>
-      cmd.label.toLowerCase().includes(query)
-    );
+    return this.getCommands().filter(cmd => fuzzyMatch(query, cmd.label));
   },
 
   openCommandPalette() {
@@ -371,6 +386,8 @@ export default () => ({
         this.toScript = settings.toScript || this.toScript;
         this.showAdvancedOptions = settings.showAdvancedOptions || this.showAdvancedOptions;
 
+        this.trackBoundingBox = settings.trackBoundingBox || false;
+
         // Normalize preferences (default to true if not set)
         this.normalizeReplaceColonVisarga = settings.normalizeReplaceColonVisarga !== undefined ? settings.normalizeReplaceColonVisarga : true;
         this.normalizeReplaceSAvagraha = settings.normalizeReplaceSAvagraha !== undefined ? settings.normalizeReplaceSAvagraha : true;
@@ -391,6 +408,7 @@ export default () => ({
       fromScript: this.fromScript,
       toScript: this.toScript,
       showAdvancedOptions: this.showAdvancedOptions,
+      trackBoundingBox: this.trackBoundingBox,
       normalizeReplaceColonVisarga: this.normalizeReplaceColonVisarga,
       normalizeReplaceSAvagraha: this.normalizeReplaceSAvagraha,
       normalizeReplaceDoublePipe: this.normalizeReplaceDoublePipe,
@@ -513,6 +531,16 @@ export default () => ({
     this.imageViewer.viewport.zoomTo(this.imageZoom);
     this.saveSettings();
   },
+  fitImageWidth() {
+    this.imageViewer.viewport.fitHorizontally();
+    this.imageZoom = this.imageViewer.viewport.getZoom();
+    this.saveSettings();
+  },
+  fitImageHeight() {
+    this.imageViewer.viewport.fitVertically();
+    this.imageZoom = this.imageViewer.viewport.getZoom();
+    this.saveSettings();
+  },
 
   // Text zoom controls
 
@@ -600,6 +628,11 @@ export default () => ({
     Alpine.raw(this.editor).focus();
   },
 
+  toggleTrackBoundingBox() {
+    this.trackBoundingBox = !this.trackBoundingBox;
+    this.saveSettings();
+  },
+
   toggleAdvancedOptions() {
     this.showAdvancedOptions = !this.showAdvancedOptions;
     this.saveSettings();
@@ -633,6 +666,14 @@ export default () => ({
 
   moveBlockDown() {
     Alpine.raw(this.editor).moveBlockDown();
+  },
+
+  mergeBlockUp() {
+    Alpine.raw(this.editor).mergeBlockUp();
+  },
+
+  mergeBlockDown() {
+    Alpine.raw(this.editor).mergeBlockDown();
   },
 
   undo() {
@@ -996,12 +1037,26 @@ export default () => ({
     overlayElement.style.boxSizing = 'border-box';
     overlayElement.style.pointerEvents = 'none';
 
+    const rect = new OpenSeadragon.Rect(x, y, width, height);
+
     this.imageViewer.addOverlay({
       element: overlayElement,
-      location: new OpenSeadragon.Rect(x, y, width, height),
+      location: rect,
     });
 
     this.currentOverlay = overlayElement;
+
+    if (this.trackBoundingBox) {
+      const bounds = this.imageViewer.viewport.getBounds();
+      const boxOutOfView = x < bounds.x || y < bounds.y ||
+        x + width > bounds.x + bounds.width ||
+        y + height > bounds.y + bounds.height;
+      if (boxOutOfView) {
+        const centerX = x + width / 2;
+        const centerY = y + height / 2;
+        this.imageViewer.viewport.panTo(new OpenSeadragon.Point(centerX, centerY));
+      }
+    }
   },
 
   clearBoundingBoxHighlight() {

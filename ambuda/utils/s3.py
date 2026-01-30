@@ -26,7 +26,7 @@ class LocalFSBotoClient:
 
     def __init__(self, base_path: Path | str | None = None):
         if base_path is None:
-            base_path = Path(__file__).parent.parent / "data" / "s3_local"
+            base_path = Path(__file__).parent.parent.parent / "data" / "s3_local"
         self.base_path = Path(base_path)
         self.base_path.mkdir(parents=True, exist_ok=True)
         _log(f"Using local s3 at base path {base_path}")

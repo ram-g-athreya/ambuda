@@ -147,6 +147,8 @@ def test_from_content_and_page_id():
             "foo\n(bar)\nbiz",
             "<page>\n<p>foo</p>\n<p><stage>(bar)</stage></p>\n<p>biz</p>\n</page>",
         ),
+        # speaker and stage
+        ("foo- (bar) biz", "<page>\n<p><speaker>foo-</speaker> <stage>(bar)</stage> biz</p>\n</page>"),
         # chaya
         ("foo [bar]", "<page>\n<p>foo <chaya>[bar]</chaya></p>\n</page>"),
         ("foo [bar\nbiz]", "<page>\n<p>foo <chaya>[bar\nbiz]</chaya></p>\n</page>"),

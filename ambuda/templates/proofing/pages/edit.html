@@ -106,6 +106,8 @@
         {{ _dropdown_item('deleteBlock', _('Delete active block')) }}
         {{ _dropdown_item('moveBlockUp', _('Move block up')) }}
         {{ _dropdown_item('moveBlockDown', _('Move block down')) }}
+        {{ _dropdown_item('mergeBlockUp', _('Merge block up')) }}
+        {{ _dropdown_item('mergeBlockDown', _('Merge block down')) }}
         {{ _dropdown_separator() }}
         {# IMPORTANT: Keep in sync with marks-config.ts
            These mark commands are available in the command palette (Cmd+K)
@@ -119,6 +121,7 @@
         {{ _dropdown_item("toggleMark('speaker')", _('Mark as speaker')) }}
         {{ _dropdown_item("toggleMark('chaya')", _('Mark as chaya (gloss)')) }}
         {{ _dropdown_item("toggleMark('prakrit')", _('Mark as prakrit (glossed)')) }}
+        {{ _dropdown_item("toggleMark('note')", _('Add internal note')) }}
       {% endcall %}
     </div>
 
@@ -134,6 +137,14 @@
         {{ _dropdown_separator() }}
         {{ _dropdown_item('displayVisualView', _('Switch to visual editor')) }}
         {{ _dropdown_item('displayXMLView', _('Switch to XML editor')) }}
+        {{ _dropdown_separator() }}
+        <li>
+          <button class="dropdown-item" @click.prevent="toggleTrackBoundingBox">
+            <span x-show="trackBoundingBox" class="inline-block w-4">&#x2713;</span>
+            <span x-show="!trackBoundingBox" class="inline-block w-4"></span>
+            {{ _('Track bounding box') }}
+          </button>
+        </li>
         {{ _dropdown_separator() }}
         <li>
           <button class="dropdown-item" @click.prevent="toggleAdvancedOptions">
@@ -270,6 +281,8 @@
             <button type="button" class="p-1 hover:bg-slate-200 rounded" @click="increaseImageZoom" title="Zoom in">&#x1f50d;<sup>+</sup></button>
             <button type="button" class="p-1 hover:bg-slate-200 rounded" @click="resetImageZoom" title="Reset zoom">&#x1f50d;&#x00b0;</button>
             <button type="button" class="p-1 hover:bg-slate-200 rounded" @click="decreaseImageZoom" title="Zoom out">&#x1f50d;<sup>-</sup></button>
+            <button type="button" class="p-1 hover:bg-slate-200 rounded" @click="fitImageWidth" title="Fit width to container">&#x2194;</button>
+            <button type="button" class="p-1 hover:bg-slate-200 rounded" @click="fitImageHeight" title="Fit height to container">&#x2195;</button>
             <button type="button" id="osd-rotate-left" class="p-1 hover:bg-slate-200 rounded" title="Rotate left">&#x27f2;</button>
             <button type="button" id="osd-rotate-right" class="p-1 hover:bg-slate-200 rounded" title="Rotate right">&#x27f3;</button>
           </div>

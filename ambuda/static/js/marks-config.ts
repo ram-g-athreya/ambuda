@@ -6,7 +6,7 @@ export interface InlineMarkConfig {
   excludes?: string;
 }
 
-// Keep in sync with ambuda/utils/structuring.py::InlineType
+// Keep in sync with ambuda/utils/project_structuring.py::InlineType
 export const INLINE_MARKS: InlineMarkConfig[] = [
   {
     name: 'error',
@@ -33,6 +33,7 @@ export const INLINE_MARKS: InlineMarkConfig[] = [
     emoji: 'ref: ',
     label: 'Mark as footnote number',
     className: 'pm-ref',
+    excludes: "_",
   },
   {
     name: 'stage',
@@ -62,6 +63,13 @@ export const INLINE_MARKS: InlineMarkConfig[] = [
     className: 'pm-prakrit',
     excludes: 'speaker',
   },
+  {
+    name: 'note',
+    emoji: '📝',
+    label: 'Add internal note',
+    className: 'pm-note',
+    excludes: '_',
+  }
 ];
 
 export type MarkName = typeof INLINE_MARKS[number]['name'];

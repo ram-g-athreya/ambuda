@@ -1,6 +1,6 @@
 import { EditorState, Plugin, Transaction, Selection } from 'prosemirror-state';
 import { EditorView, Decoration, DecorationSet } from 'prosemirror-view';
-import { Schema, Node as PMNode, Mark, DOMParser as PMDOMParser, DOMSerializer, NodeSpec, MarkSpec } from 'prosemirror-model';
+import { Schema, Node as PMNode, Mark, Fragment, DOMParser as PMDOMParser, DOMSerializer, NodeSpec, MarkSpec } from 'prosemirror-model';
 import { keymap } from 'prosemirror-keymap';
 import { history, undo as pmUndo, redo as pmRedo } from 'prosemirror-history';
 import { baseKeymap } from 'prosemirror-commands';
@@ -437,6 +437,30 @@ class BlockView {
     });
     this.dropdownMenu.appendChild(moveDownBtn);
 
+    // Merge up button
+    this.mergeUpBtn = document.createElement('button');
+    this.mergeUpBtn.type = 'button';
+    this.mergeUpBtn.className = 'w-full text-left px-3 py-2 text-xs hover:bg-slate-100 flex items-center gap-2 border-t border-slate-200';
+    this.mergeUpBtn.innerHTML = '<span>⤒</span> Merge up';
+    this.mergeUpBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.mergeBlockUp();
+      this.closeDropdown();
+    });
+    this.dropdownMenu.appendChild(this.mergeUpBtn);
+
+    // Merge down button
+    this.mergeDownBtn = document.createElement('button');
+    this.mergeDownBtn.type = 'button';
+    this.mergeDownBtn.className = 'w-full text-left px-3 py-2 text-xs hover:bg-slate-100 flex items-center gap-2';
+    this.mergeDownBtn.innerHTML = '<span>⤓</span> Merge down';
+    this.mergeDownBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.mergeBlockDown();
+      this.closeDropdown();
+    });
+    this.dropdownMenu.appendChild(this.mergeDownBtn);
+
     // Remove button
     const removeBtn = document.createElement('button');
     removeBtn.type = 'button';
@@ -584,9 +608,33 @@ class BlockView {
     this.updateFieldVisibility();
   }
 
+  getBlockIndex(): number {
+    const pos = this.getPos();
+    if (pos === undefined) return -1;
+    let offset = 0;
+    for (let i = 0; i < this.view.state.doc.childCount; i++) {
+      if (offset === pos) return i;
+      offset += this.view.state.doc.child(i).nodeSize;
+    }
+    return -1;
+  }
+
   toggleDropdown() {
     this.dropdownOpen = !this.dropdownOpen;
     this.dropdownMenu.style.display = this.dropdownOpen ? 'block' : 'none';
+
+    if (this.dropdownOpen) {
+      const index = this.getBlockIndex();
+      const count = this.view.state.doc.childCount;
+      const disabledClass = 'opacity-40 pointer-events-none';
+      this.mergeUpBtn.className = this.mergeUpBtn.className.replace(disabledClass, '').trim();
+      this.mergeDownBtn.className = this.mergeDownBtn.className.replace(disabledClass, '').trim();
+
+      const isFirst = index <= 0;
+      const isLast = index >= count - 1;
+      if (isFirst) this.mergeUpBtn.className += ` ${disabledClass}`;
+      if (isLast) this.mergeDownBtn.className += ` ${disabledClass}`;
+    }
   }
 
   closeDropdown() {
@@ -623,21 +671,19 @@ class BlockView {
   }
 
   moveBlockUp() {
-    const pos = this.getPos();
-    if (pos === undefined) return;
-
-    const tr = this.view.state.tr.setSelection(Selection.near(this.view.state.doc.resolve(pos + 1)));
-    this.view.dispatch(tr);
-    this.editor.moveBlockUp();
+    this.editor.moveBlockUp(this.getBlockIndex());
   }
 
   moveBlockDown() {
-    const pos = this.getPos();
-    if (pos === undefined) return;
+    this.editor.moveBlockDown(this.getBlockIndex());
+  }
 
-    const tr = this.view.state.tr.setSelection(Selection.near(this.view.state.doc.resolve(pos + 1)));
-    this.view.dispatch(tr);
-    this.editor.moveBlockDown();
+  mergeBlockUp() {
+    this.editor.mergeBlockUp(this.getBlockIndex());
+  }
+
+  mergeBlockDown() {
+    this.editor.mergeBlockDown(this.getBlockIndex());
   }
 
   destroy() {
@@ -1066,27 +1112,40 @@ export default class {
     }
   }
 
-  insertBlock() {
-    const { state, dispatch } = this.view;
+  _getBlockIndexFromSelection(): number {
+    const { state } = this.view;
     const { $from } = state.selection;
 
-    // Find the current block
     let blockDepth = $from.depth;
     while (blockDepth > 0 && state.doc.resolve($from.pos).node(blockDepth).type.name !== 'block') {
       blockDepth--;
     }
+    if (blockDepth === 0) return -1;
 
-    if (blockDepth === 0) return;
-
-    const blockPos = $from.before(blockDepth);
     const currentBlock = $from.node(blockDepth);
-    const afterPos = blockPos + currentBlock.nodeSize;
+    for (let i = 0; i < state.doc.childCount; i++) {
+      if (state.doc.child(i) === currentBlock) return i;
+    }
+    return -1;
+  }
 
-    // Create a new empty block with default type 'p'
+  _getBlockStartPos(index: number): number {
+    const { state } = this.view;
+    let pos = 0;
+    for (let i = 0; i < index; i++) {
+      pos += state.doc.child(i).nodeSize;
+    }
+    return pos;
+  }
+
+  insertBlock(blockIndex?: number) {
+    const { state, dispatch } = this.view;
+    if (blockIndex === undefined) blockIndex = this._getBlockIndexFromSelection();
+    if (blockIndex < 0) return;
+
+    const afterPos = this._getBlockStartPos(blockIndex) + state.doc.child(blockIndex).nodeSize;
     const newBlock = this.schema.nodes.block.create({ type: 'p' });
     const tr = state.tr.insert(afterPos, newBlock);
-
-    // Move cursor to the new block
     tr.setSelection(Selection.near(tr.doc.resolve(afterPos + 1)));
     dispatch(tr);
 
@@ -1095,28 +1154,15 @@ export default class {
     }
   }
 
-  deleteActiveBlock() {
+  deleteActiveBlock(blockIndex?: number) {
     const { state, dispatch } = this.view;
-    const { $from } = state.selection;
+    if (blockIndex === undefined) blockIndex = this._getBlockIndexFromSelection();
+    if (blockIndex < 0) return;
 
-    // Find the current block
-    let blockDepth = $from.depth;
-    while (blockDepth > 0 && state.doc.resolve($from.pos).node(blockDepth).type.name !== 'block') {
-      blockDepth--;
-    }
+    if (state.doc.childCount === 1) return;
 
-    if (blockDepth === 0) return;
-
-    // Don't allow deleting if it's the only block
-    if (state.doc.childCount === 1) {
-      console.log('Cannot delete the only block');
-      return;
-    }
-
-    const blockPos = $from.before(blockDepth);
-    const currentBlock = $from.node(blockDepth);
-    const tr = state.tr.delete(blockPos, blockPos + currentBlock.nodeSize);
-
+    const blockPos = this._getBlockStartPos(blockIndex);
+    const tr = state.tr.delete(blockPos, blockPos + state.doc.child(blockIndex).nodeSize);
     dispatch(tr);
 
     if (this.onChange) {
@@ -1124,45 +1170,15 @@ export default class {
     }
   }
 
-  moveBlockUp() {
+  moveBlockUp(blockIndex?: number) {
     const { state, dispatch } = this.view;
-    const { $from } = state.selection;
+    if (blockIndex === undefined) blockIndex = this._getBlockIndexFromSelection();
+    if (blockIndex <= 0) return;
 
-    // Find the current block
-    let blockDepth = $from.depth;
-    while (blockDepth > 0 && state.doc.resolve($from.pos).node(blockDepth).type.name !== 'block') {
-      blockDepth--;
-    }
-
-    if (blockDepth === 0) return;
-
-    const currentBlock = $from.node(blockDepth);
-
-    // Find block index by iterating through doc children
-    let blockIndex = -1;
-    for (let i = 0; i < state.doc.childCount; i++) {
-      if (state.doc.child(i) === currentBlock) {
-        blockIndex = i;
-        break;
-      }
-    }
-
-    if (blockIndex <= 0) {
-      console.log('Cannot move up: already at the top');
-      return;
-    }
-
-    // Get the previous block
+    const currentBlock = state.doc.child(blockIndex);
     const prevBlock = state.doc.child(blockIndex - 1);
+    const prevBlockStart = this._getBlockStartPos(blockIndex - 1);
 
-    // Calculate positions
-    let prevBlockStart = 0;
-    for (let i = 0; i < blockIndex - 1; i++) {
-      prevBlockStart += state.doc.child(i).nodeSize;
-    }
-    const currentBlockStart = prevBlockStart + prevBlock.nodeSize;
-
-    // Create new doc with blocks swapped
     const newChildren: PMNode[] = [];
     for (let i = 0; i < state.doc.childCount; i++) {
       if (i === blockIndex - 1) {
@@ -1176,10 +1192,7 @@ export default class {
 
     const newDoc = state.schema.node('doc', null, newChildren);
     let tr = state.tr.replaceWith(0, state.doc.content.size, newDoc);
-
-    // Set selection to the moved block (now at prevBlockStart)
     tr = tr.setSelection(Selection.near(tr.doc.resolve(prevBlockStart + 1)));
-
     dispatch(tr);
 
     if (this.onChange) {
@@ -1187,45 +1200,15 @@ export default class {
     }
   }
 
-  moveBlockDown() {
+  moveBlockDown(blockIndex?: number) {
     const { state, dispatch } = this.view;
-    const { $from } = state.selection;
+    if (blockIndex === undefined) blockIndex = this._getBlockIndexFromSelection();
+    if (blockIndex < 0 || blockIndex >= state.doc.childCount - 1) return;
 
-    // Find the current block
-    let blockDepth = $from.depth;
-    while (blockDepth > 0 && state.doc.resolve($from.pos).node(blockDepth).type.name !== 'block') {
-      blockDepth--;
-    }
-
-    if (blockDepth === 0) return;
-
-    const currentBlock = $from.node(blockDepth);
-
-    // Find block index by iterating through doc children
-    let blockIndex = -1;
-    for (let i = 0; i < state.doc.childCount; i++) {
-      if (state.doc.child(i) === currentBlock) {
-        blockIndex = i;
-        break;
-      }
-    }
-
-    if (blockIndex < 0 || blockIndex >= state.doc.childCount - 1) {
-      console.log('Cannot move down: already at the bottom');
-      return;
-    }
-
-    // Get the next block
+    const currentBlock = state.doc.child(blockIndex);
     const nextBlock = state.doc.child(blockIndex + 1);
+    const newBlockStart = this._getBlockStartPos(blockIndex) + nextBlock.nodeSize;
 
-    // Calculate position where current block will be after swap
-    let currentBlockStart = 0;
-    for (let i = 0; i < blockIndex; i++) {
-      currentBlockStart += state.doc.child(i).nodeSize;
-    }
-    const newCurrentBlockStart = currentBlockStart + nextBlock.nodeSize;
-
-    // Create new doc with blocks swapped
     const newChildren: PMNode[] = [];
     for (let i = 0; i < state.doc.childCount; i++) {
       if (i === blockIndex) {
@@ -1239,9 +1222,61 @@ export default class {
 
     const newDoc = state.schema.node('doc', null, newChildren);
     let tr = state.tr.replaceWith(0, state.doc.content.size, newDoc);
+    tr = tr.setSelection(Selection.near(tr.doc.resolve(newBlockStart + 1)));
+    dispatch(tr);
 
-    // Set selection to the moved block (now at newCurrentBlockStart)
-    tr = tr.setSelection(Selection.near(tr.doc.resolve(newCurrentBlockStart + 1)));
+    if (this.onChange) {
+      this.onChange();
+    }
+  }
+
+  mergeBlockUp(blockIndex?: number) {
+    this._mergeBlocks('up', blockIndex);
+  }
+
+  mergeBlockDown(blockIndex?: number) {
+    this._mergeBlocks('down', blockIndex);
+  }
+
+  _mergeBlocks(direction: 'up' | 'down', blockIndex?: number) {
+    const { state, dispatch } = this.view;
+    if (blockIndex === undefined) blockIndex = this._getBlockIndexFromSelection();
+
+    if (direction === 'up' && blockIndex <= 0) return;
+    if (direction === 'down' && (blockIndex < 0 || blockIndex >= state.doc.childCount - 1)) return;
+
+    const keepIndex = direction === 'up' ? blockIndex - 1 : blockIndex;
+    const removeIndex = direction === 'up' ? blockIndex : blockIndex + 1;
+    const keepBlock = state.doc.child(keepIndex);
+    const removeBlock = state.doc.child(removeIndex);
+
+    const separator = state.schema.text('\n');
+    const mergedContent = Fragment.from([
+      ...keepBlock.content.content,
+      separator,
+      ...removeBlock.content.content,
+    ]);
+    const mergedBlock = keepBlock.copy(mergedContent);
+
+    const newChildren: PMNode[] = [];
+    for (let i = 0; i < state.doc.childCount; i++) {
+      if (i === keepIndex) {
+        newChildren.push(mergedBlock);
+      } else if (i === removeIndex) {
+        continue;
+      } else {
+        newChildren.push(state.doc.child(i));
+      }
+    }
+
+    const newDoc = state.schema.node('doc', null, newChildren);
+    let tr = state.tr.replaceWith(0, state.doc.content.size, newDoc);
+
+    let targetPos = 0;
+    for (let i = 0; i < keepIndex; i++) {
+      targetPos += newChildren[i].nodeSize;
+    }
+    tr = tr.setSelection(Selection.near(tr.doc.resolve(targetPos + 1)));
 
     dispatch(tr);
 

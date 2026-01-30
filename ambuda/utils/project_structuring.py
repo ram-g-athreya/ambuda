@@ -240,12 +240,12 @@ def split_plain_text_to_blocks(
             if m := re.fullmatch(r"^(\S+\s*[-–])(.+)", line):
                 # Speaker --> start of new block
                 id += 1
-                lines[i] = f"<speaker>{m.group(1)}</speaker>{m.group(2)}"
+                line = lines[i] = f"<speaker>{m.group(1)}</speaker>{m.group(2)}"
                 ids[i] = id
 
         if match_stage:
             if m := re.match(r"(.*)(\(.*?\))(.*)", line):
-                lines[i] = f"{m.group(1)}<stage>{m.group(2)}</stage>{m.group(3)}"
+                line = lines[i] = f"{m.group(1)}<stage>{m.group(2)}</stage>{m.group(3)}"
                 if not m.group(1) and not m.group(3):
                     # Stage without other elements --> separate block
                     id += 1

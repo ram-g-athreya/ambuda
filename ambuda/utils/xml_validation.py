@@ -29,6 +29,8 @@ class InlineType(StrEnum):
     REF = "ref"
     FLAG = "flag"
     CHAYA = "chaya"
+    PRAKRIT = "prakrit"
+    NOTE = "note"
 
 
 class TEITag(StrEnum):

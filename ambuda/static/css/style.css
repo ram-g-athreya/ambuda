@@ -188,7 +188,7 @@
   }
 
   /* Prosemirror mark CSS */
-  .pm-error, .pm-fix, .pm-flag, .pm-stage, .pm-speaker, .pm-chaya, .pm-prakrit {
+  .pm-error, .pm-fix, .pm-flag, .pm-stage, .pm-speaker, .pm-chaya, .pm-prakrit, .pm-note {
     @apply border-b-2 pr-1;
   }
 
@@ -261,6 +261,15 @@
 
   .pm-prakrit:before {
     content: "☀️ ";
+    @apply text-xs pl-1;
+  }
+
+  .pm-note {
+    @apply bg-yellow-200 border-yellow-500 italic;
+  }
+
+  .pm-note:before {
+    content: "📝 ";
     @apply text-xs pl-1;
   }
 
