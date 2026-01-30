@@ -109,21 +109,7 @@
         {{ _dropdown_item('mergeBlockUp', _('Merge block up')) }}
         {{ _dropdown_item('mergeBlockDown', _('Merge block down')) }}
         {{ _dropdown_separator() }}
-        {# IMPORTANT: Keep in sync with marks-config.ts
-           These mark commands are available in the command palette (Cmd+K)
-           which is generated automatically from marks-config.ts.
-           TODO: Consider generating this menu dynamically from INLINE_MARKS #}
-        {{ _dropdown_item("toggleMark('error')", _('Mark as error')) }}
-        {{ _dropdown_item("toggleMark('fix')", _('Mark as fix')) }}
-        {{ _dropdown_item("toggleMark('flag')", _('Mark as unclear')) }}
-        {{ _dropdown_item("toggleMark('ref')", _('Mark as footnote number')) }}
-        {{ _dropdown_item("toggleMark('stage')", _('Mark as stage direction')) }}
-        {{ _dropdown_item("toggleMark('speaker')", _('Mark as speaker')) }}
-        {{ _dropdown_item("toggleMark('chaya')", _('Mark as chaya (gloss)')) }}
-        {{ _dropdown_item("toggleMark('prakrit')", _('Mark as prakrit (glossed)')) }}
-        {{ _dropdown_item("toggleMark('note')", _('Add internal note')) }}
-        {{ _dropdown_item("toggleMark('add')", _('Mark as added by editor')) }}
-        {{ _dropdown_item("toggleMark('ellipsis')", _('Mark as omitted by editor')) }}
+        {{ _dropdown_item('toggleMarkToolbar()', _('Mark as ...')) }}
       {% endcall %}
     </div>
 
@@ -310,6 +296,17 @@
         </div>
       </div>
     </div>
+  </div>
+
+  <div x-show="showMarkToolbar" class="bg-slate-200 border-b px-2 py-1 flex flex-wrap gap-1 text-sm">
+    <template x-for="mark in inlineMarks" :key="mark.name">
+      <button type="button"
+              class="rounded px-2 py-0.5"
+              :class="mark.className"
+              @mousedown.prevent="toggleMark(mark.name)"
+              x-text="mark.label">
+      </button>
+    </template>
   </div>
 
   {% if not current_user.is_authenticated -%}

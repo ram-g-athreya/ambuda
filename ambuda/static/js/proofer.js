@@ -200,6 +200,8 @@ export default () => ({
   toScript: 'devanagari',
   // If true, show advanced options (text, n, and merge_next)
   showAdvancedOptions: false,
+  showMarkToolbar: false,
+  inlineMarks: INLINE_MARKS,
 
   // Internal-only
   layoutClasses: ImageClasses.Right,
@@ -646,6 +648,10 @@ export default () => ({
     const selection = Alpine.raw(this.editor).getSelection();
     const replacement = callback(selection.text);
     Alpine.raw(this.editor).replaceSelection(replacement);
+  },
+
+  toggleMarkToolbar() {
+    this.showMarkToolbar = !this.showMarkToolbar;
   },
 
   toggleMark(markName) {
