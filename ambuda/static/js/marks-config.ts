@@ -69,7 +69,19 @@ export const INLINE_MARKS: InlineMarkConfig[] = [
     label: 'Add internal note',
     className: 'pm-note',
     excludes: '_',
-  }
+  },
+  {
+    name: 'add',
+    emoji: '',
+    label: 'Mark as added by editor',
+    className: 'pm-add',
+  },
+  {
+    name: 'ellipsis',
+    emoji: '',
+    label: 'Mark as omitted by editor',
+    className: 'pm-ellipsis',
+  },
 ];
 
 export type MarkName = typeof INLINE_MARKS[number]['name'];

@@ -31,7 +31,7 @@ B = s.ProofBlock
         # OK: inline elements
         *[
             (f"<page><p><{tag}>foo</{tag}></p></page>", [])
-            for tag in ["error", "fix", "speaker", "stage", "ref", "flag", "chaya"]
+            for tag in ["error", "fix", "speaker", "stage", "ref", "flag", "chaya", "prakrit", "note", "add", "ellipsis"]
         ],
         # ERR: unknown or unexpected tag
         ("<foo></foo>", ["must be 'page'"]),

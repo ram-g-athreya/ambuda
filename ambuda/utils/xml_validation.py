@@ -31,6 +31,8 @@ class InlineType(StrEnum):
     CHAYA = "chaya"
     PRAKRIT = "prakrit"
     NOTE = "note"
+    ADD = "add"
+    ELLIPSIS = "ellipsis"
 
 
 class TEITag(StrEnum):
@@ -55,6 +57,8 @@ class TEITag(StrEnum):
     REF = "ref"
     NOTE = "note"
     PB = "pb"
+    ADD = "add"
+    ELLIPSIS = "ellipsis"
 
 
 @dc.dataclass
@@ -125,7 +129,7 @@ VALIDATION_SPECS = {
 # - `stage` in `seg` ??? `choice` in `seg` ?
 XML_LANG = "{http://www.w3.org/XML/1998/namespace}lang"
 XML_ID = "{http://www.w3.org/XML/1998/namespace}id"
-INLINE_TEXT = {"choice", "ref", "supplied", "note", "pb"}
+INLINE_TEXT = {"choice", "ref", "supplied", "note", "pb", "add", "ellipsis"}
 TEI_XML_VALIDATION_SPEC = {
     TEITag.SP: ValidationSpec(
         children={TEITag.SPEAKER, TEITag.P, TEITag.LG, TEITag.STAGE, "note"},
@@ -136,7 +140,7 @@ TEI_XML_VALIDATION_SPEC = {
     TEITag.LG: ValidationSpec(children={"l", "note", "pb"}, attrib={"n"}),
     TEITag.L: ValidationSpec(children=INLINE_TEXT, attrib=set()),
     TEITag.P: ValidationSpec(
-        children={"note", "choice", "ref", TEITag.STAGE, "pb", "supplied"}, attrib={"n"}
+        children={"note", "choice", "ref", TEITag.STAGE, "pb", "supplied", "add", "ellipsis"}, attrib={"n"}
     ),
     TEITag.CHOICE: ValidationSpec(
         children={TEITag.SEG, TEITag.CORR, TEITag.SIC}, attrib={"type", "rend"}
@@ -151,6 +155,8 @@ TEI_XML_VALIDATION_SPEC = {
     TEITag.CORR: ValidationSpec(),
     TEITag.PB: ValidationSpec(attrib={"n"}),
     TEITag.SUPPLIED: ValidationSpec(),
+    TEITag.ADD: ValidationSpec(),
+    TEITag.ELLIPSIS: ValidationSpec(),
 }
 
 
