@@ -89,6 +89,12 @@ def initialize_test_db():
     session.add(admin)
     session.flush()
 
+    # Non-P1 user (no proofing roles)
+    u_nop1 = db.User(username="u-no-p1", email="u_no_p1@ambuda.org")
+    u_nop1.set_password("pass_no_p1")
+    session.add(u_nop1)
+    session.flush()
+
     # Deleted and Banned
     deleted_admin = db.User(username="u-deleted", email="u_deleted@ambuda.org")
     deleted_admin.set_password("pass_deleted")
@@ -258,5 +264,13 @@ def deleted_client(flask_app):
 def banned_client(flask_app):
     session = get_session()
     stmt = select(db.User).filter_by(username="u-banned")
+    user = session.scalars(stmt).first()
+    return flask_app.test_client(user=user)
+
+
+@pytest.fixture()
+def no_p1_client(flask_app):
+    session = get_session()
+    stmt = select(db.User).filter_by(username="u-no-p1")
     user = session.scalars(stmt).first()
     return flask_app.test_client(user=user)

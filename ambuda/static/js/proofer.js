@@ -220,6 +220,7 @@ export default () => ({
   historyRevisions: [],
   modalSummary: '',
   modalStatus: '',
+  modalExplanation: '',
   originalContent: '',
   changesPreview: '',
   // Normalize modal options
@@ -909,9 +910,11 @@ export default () => ({
   submitFormFromModal() {
     const summaryInput = $('input[name="summary"]');
     const statusInput = $('input[name="status"]');
+    const explanationInput = $('input[name="explanation"]');
 
     if (summaryInput) summaryInput.value = this.modalSummary;
     if (statusInput) statusInput.value = this.modalStatus;
+    if (explanationInput) explanationInput.value = this.modalExplanation;
 
     this.closeModal();
     this.hasUnsavedChanges = false;

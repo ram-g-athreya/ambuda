@@ -4,6 +4,7 @@ The main route here is `edit`, which defines the page editor and the edit flow.
 """
 
 import re
+import uuid
 from dataclasses import dataclass
 import defusedxml.ElementTree as DET
 
@@ -184,6 +185,8 @@ def edit(project_slug, page_slug):
     page_number = _get_page_number(ctx.project, cur)
     image_url = _get_image_url(ctx.project, cur)
 
+    can_save_directly = current_user.is_authenticated and current_user.is_p1
+
     return render_template(
         "proofing/pages/edit.html",
         conflict=None,
@@ -196,11 +199,11 @@ def edit(project_slug, page_slug):
         page_number=page_number,
         project=ctx.project,
         image_url=image_url,
+        can_save_directly=can_save_directly,
     )
 
 
 @bp.route("/<project_slug>/<page_slug>/", methods=["POST"])
-@login_required
 def edit_post(project_slug, page_slug):
     """Submit changes through the page editor.
 
@@ -215,39 +218,61 @@ def edit_post(project_slug, page_slug):
     cur = ctx.cur
     form = EditPageForm()
     conflict = None
+    can_save_directly = current_user.is_authenticated and current_user.is_p1
 
     if form.validate_on_submit():
         # `new_content` is already validated through EditPageForm.
         new_content = form.content.data
 
-        cur_page = ctx.cur
-        if cur_page.revisions:
-            cur_content = cur_page.revisions[-1].content
-        else:
-            cur_content = None
-        content_has_changed = cur_content != new_content
-
-        status_has_changed = cur_page.status.name != form.status.data
-        has_changed = content_has_changed or status_has_changed
-        try:
-            if has_changed:
-                new_version = add_revision(
-                    cur,
-                    summary=form.summary.data,
-                    content=form.content.data,
-                    status=form.status.data,
-                    version=int(form.version.data),
-                    author_id=current_user.id,
-                )
-                form.version.data = new_version
-                flash("Saved changes.", "success")
+        if can_save_directly:
+            # P1+ users: existing direct-save flow.
+            cur_page = ctx.cur
+            if cur_page.revisions:
+                cur_content = cur_page.revisions[-1].content
             else:
-                flash("Skipped save. (No changes made.)", "success")
-        except EditError:
-            # FIXME: in the future, use a proper edit conflict view.
-            flash("Edit conflict. Please incorporate the changes below:")
-            conflict = cur.revisions[-1]
-            form.version.data = cur.version
+                cur_content = None
+            content_has_changed = cur_content != new_content
+
+            status_has_changed = cur_page.status.name != form.status.data
+            has_changed = content_has_changed or status_has_changed
+            try:
+                if has_changed:
+                    new_version = add_revision(
+                        cur,
+                        summary=form.summary.data,
+                        content=form.content.data,
+                        status=form.status.data,
+                        version=int(form.version.data),
+                        author_id=current_user.id,
+                    )
+                    form.version.data = new_version
+                    flash("Saved changes.", "success")
+                else:
+                    flash("Skipped save. (No changes made.)", "success")
+            except EditError:
+                # FIXME: in the future, use a proper edit conflict view.
+                flash("Edit conflict. Please incorporate the changes below:")
+                conflict = cur.revisions[-1]
+                form.version.data = cur.version
+        else:
+            # Non-P1 users (including anonymous): create a suggestion.
+            latest_revision = cur.revisions[-1] if cur.revisions else None
+            if latest_revision is None:
+                flash("Cannot suggest edits on a page with no revisions.", "error")
+            else:
+                session = q.get_session()
+                suggestion = db.Suggestion(
+                    project_id=ctx.project.id,
+                    page_id=cur.id,
+                    revision_id=latest_revision.id,
+                    user_id=current_user.id if current_user.is_authenticated else None,
+                    batch_id=str(uuid.uuid4()),
+                    content=new_content,
+                    explanation=request.form.get("explanation", ""),
+                )
+                session.add(suggestion)
+                session.commit()
+                flash("Your suggestion has been submitted for review.", "success")
     else:
         flash("Sorry, your changes have one or more errors.", "error")
 
@@ -271,6 +296,7 @@ def edit_post(project_slug, page_slug):
         page_number=page_number,
         project=ctx.project,
         image_url=image_url,
+        can_save_directly=can_save_directly,
     )
 
 

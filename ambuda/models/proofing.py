@@ -350,3 +350,73 @@ class Revision(Base):
     @property
     def created(self):
         return self.created_at
+
+
+class SuggestionStatus(StrEnum):
+    """The status of a suggestion."""
+
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+
+
+class Suggestion(Base):
+    """A suggested edit from a non-P1 or anonymous user.
+
+    (P1 reviewers can accept or reject suggestions.)
+    """
+
+    __tablename__ = "proof_suggestions"
+
+    #: Primary key.
+    id = pk()
+    #: The project this suggestion is for.
+    project_id = foreign_key("proof_projects.id")
+    #: The page this suggestion is for.
+    page_id = foreign_key("proof_pages.id")
+    #: The revision against which this suggestion was made.
+    revision_id = foreign_key("proof_revisions.id")
+    #: The user who made the suggestion (null for anonymous).
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
+    #: Group batches of suggestions.
+    batch_id: Mapped[str] = mapped_column(String, nullable=False, default=_create_uuid)
+    #: Timestamp at which this suggestion was created.
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
+    )
+    #: The suggested page content.
+    content: Mapped[str] = mapped_column(Text_, nullable=False)
+    #: An explanation from the suggester.
+    explanation: Mapped[str] = mapped_column(String, nullable=False, default="")
+    #: The status of this suggestion.
+    status: Mapped[str] = mapped_column(
+        String, nullable=False, default=SuggestionStatus.PENDING
+    )
+
+    project = relationship("Project")
+    page = relationship("Page")
+    revision = relationship("Revision")
+    user = relationship("User")
+
+
+@event.listens_for(Suggestion, "before_insert")
+@event.listens_for(Suggestion, "before_update")
+def validate_suggestion_status(mapper, connection, suggestion):
+    if suggestion.status:
+        try:
+            SuggestionStatus(suggestion.status)
+        except ValueError:
+            valid_values = ", ".join([s.value for s in SuggestionStatus])
+            raise ValueError(
+                f"Suggestion.status must be a valid SuggestionStatus value. "
+                f"Got '{suggestion.status}', expected one of: {valid_values}"
+            )
+
+
+@event.listens_for(Suggestion, "before_insert")
+@event.listens_for(Suggestion, "before_update")
+def validate_suggestion_lengths(mapper, connection, suggestion):
+    if suggestion.content and len(suggestion.content) > 50_000:
+        raise ValueError("Suggestion.content must be at most 50,000 characters.")
+    if suggestion.explanation and len(suggestion.explanation) > 1_000:
+        raise ValueError("Suggestion.explanation must be at most 1,000 characters.")

@@ -286,11 +286,17 @@
           {% set next_url = url_for('proofing.page.edit', project_slug=project.slug, page_slug=page_context.next.slug) %}
           <a class="p-2 rounded hover:bg-slate-400" href="{{ prev_url }}">&larr;</a>
           <a class="p-2 rounded hover:bg-slate-400" href="{{ next_url }}">&rarr;</a>
-          {% if current_user.is_authenticated %}
+          {% if can_save_directly %}
           <button class="btn btn-submit px-3 py-1.5"
                   type="button"
                   @click="openSubmitModal">
             {{ _('Save') }}
+          </button>
+          {% else %}
+          <button class="btn btn-submit px-3 py-1.5"
+                  type="button"
+                  @click="openSubmitModal">
+            {{ _('Suggest') }}
           </button>
           {% endif %}
         </div>
@@ -360,6 +366,7 @@
     {{ form.version }}
     <input type="hidden" name="summary" value="">
     <input type="hidden" name="status" value="{{ form.status.data }}">
+    <input type="hidden" name="explanation" value="">
 
     <div :class="layoutClasses" class="flex-1 min-h-0">
       <div class="flex-1 flex flex-col min-h-0">
@@ -443,7 +450,7 @@
        class="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center pt-20 z-50">
     <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl overflow-hidden">
       <div class="bg-slate-100 p-4 border-b flex justify-between items-center">
-        <h2 class="text-lg font-bold">{{ _('Save changes') }}</h2>
+        <h2 class="text-lg font-bold">{% if can_save_directly %}{{ _('Save changes') }}{% else %}{{ _('Submit suggestion') }}{% endif %}</h2>
         <button type="button"
                 class="text-slate-700 hover:text-slate-900 font-bold text-xl"
                 @click="closeModal">&times;</button>
@@ -454,6 +461,7 @@
           <div class="bg-slate-50 border border-slate-300 rounded p-3 text-sm font-mono max-h-48 overflow-y-auto whitespace-pre-wrap" x-html="changesPreview"></div>
         </div>
 
+        {% if can_save_directly %}
         <div class="flex gap-4 items-end">
           <div class="flex-1">
             {{ form.summary.label(class_="text-slate-600 mb-1 block text-sm") }}
@@ -483,6 +491,15 @@
             </select>
           </div>
         </div>
+        {% else %}
+        <div>
+          <label class="text-slate-600 mb-1 block text-sm">{{ _('Explanation (optional)') }}</label>
+          <input type="text"
+                 x-model="modalExplanation"
+                 class="block rounded bg-white w-full p-2 border border-slate-300"
+                 placeholder="{{ _('Describe what you changed and why') }}">
+        </div>
+        {% endif %}
 
         {% set cc0 = "https://creativecommons.org/publicdomain/zero/1.0/" %}
         <p class="mt-4 text-xs text-slate-600">{% trans %}
@@ -500,7 +517,7 @@
         <button type="button"
                 class="btn btn-submit"
                 @click="submitFormFromModal">
-          {{ _('Submit my changes') }}
+          {% if can_save_directly %}{{ _('Submit my changes') }}{% else %}{{ _('Submit suggestion') }}{% endif %}
         </button>
       </div>
     </div>

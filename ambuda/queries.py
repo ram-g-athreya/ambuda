@@ -216,14 +216,6 @@ class Query:
         user = db.User(username=username, email=email)
         user.set_password(raw_password)
         self.session.add(user)
-        self.session.flush()
-
-        # Allow all users to be proofreaders
-        stmt = select(db.Role).filter_by(name=db.SiteRole.P1.value)
-        proofreader_role = self.session.scalars(stmt).first()
-        user_role = db.UserRoles(user_id=user.id, role_id=proofreader_role.id)
-        self.session.add(user_role)
-
         self.session.commit()
         return user
 

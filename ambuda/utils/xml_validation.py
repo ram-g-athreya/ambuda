@@ -140,7 +140,17 @@ TEI_XML_VALIDATION_SPEC = {
     TEITag.LG: ValidationSpec(children={"l", "note", "pb"}, attrib={"n"}),
     TEITag.L: ValidationSpec(children=INLINE_TEXT, attrib=set()),
     TEITag.P: ValidationSpec(
-        children={"note", "choice", "ref", TEITag.STAGE, "pb", "supplied", "add", "ellipsis"}, attrib={"n"}
+        children={
+            "note",
+            "choice",
+            "ref",
+            TEITag.STAGE,
+            "pb",
+            "supplied",
+            "add",
+            "ellipsis",
+        },
+        attrib={"n"},
     ),
     TEITag.CHOICE: ValidationSpec(
         children={TEITag.SEG, TEITag.CORR, TEITag.SIC}, attrib={"type", "rend"}
