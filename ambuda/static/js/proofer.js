@@ -951,25 +951,25 @@ export default () => ({
     const LINE_FUZZY_THRESHOLD = 0.7;
     const WORD_FUZZY_THRESHOLD = 0.7;
 
-    const { word, lineText, wordIndex } = context;
+    const { word, line, wordIndex } = context;
 
     const normalizedWord = word.trim();
-    const normalizedLine = lineText.trim();
+    const normalizedLine = line.trim();
     if (!normalizedWord || !normalizedLine) return null;
 
     let bestLine = null;
     let bestLineSimilarity = LINE_FUZZY_THRESHOLD;
-    for (const line of this.boundingBoxLines) {
-      const lineTextNormalized = line.text.toLowerCase().trim();
-      if (lineTextNormalized === normalizedLine) {
-        bestLine = line;
+    for (const boundingLine of this.boundingBoxLines) {
+      const normalizedBoundingLine = boundingLine.text.trim();
+      if (normalizedBoundingLine === normalizedLine) {
+        bestLine = boundingLine;
         break;
       }
 
-      const similarity = similarityRatio(normalizedLine, lineTextNormalized);
+      const similarity = similarityRatio(normalizedLine, normalizedBoundingLine);
       if (similarity > bestLineSimilarity) {
         bestLineSimilarity = similarity;
-        bestLine = line;
+        bestLine = boundingLine;
       }
     }
 
@@ -1057,13 +1057,14 @@ export default () => ({
 
     if (this.trackBoundingBox) {
       const bounds = this.imageViewer.viewport.getBounds();
-      const boxOutOfView = x < bounds.x || y < bounds.y ||
-        x + width > bounds.x + bounds.width ||
-        y + height > bounds.y + bounds.height;
-      if (boxOutOfView) {
-        const centerX = x + width / 2;
-        const centerY = y + height / 2;
-        this.imageViewer.viewport.panTo(new OpenSeadragon.Point(centerX, centerY));
+      const outX = x < bounds.x || x + width > bounds.x + bounds.width;
+      const outY = y < bounds.y || y + height > bounds.y + bounds.height;
+
+      if (outX || outY) {
+        const center = this.imageViewer.viewport.getCenter();
+        const panX = outX ? x + width / 2 : center.x;
+        const panY = outY ? y + height / 2 : center.y;
+        this.imageViewer.viewport.panTo(new OpenSeadragon.Point(panX, panY));
       }
     }
   },

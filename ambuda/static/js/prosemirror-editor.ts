@@ -113,57 +113,40 @@ function getWordAtCursor(state: EditorState): { word: string; lineText: string; 
     return null;
   }
 
-  // Get the text content and cursor position within the block
-  let text = '';
-  let cursorOffset = $from.parentOffset;
-
+  const buf: string[] = [];
   node.forEach((child) => {
     if (child.isText && child.text) {
-      text += child.text;
+      buf.push(child.text);
     }
   });
+  const text = buf.join('');
+  const cursorOffset = $from.parentOffset;
 
   if (!text || cursorOffset > text.length) {
     return null;
   }
 
-  const beforeCursor = text.substring(0, cursorOffset);
-  const afterCursor = text.substring(cursorOffset);
+  const lineStart = text.lastIndexOf('\n', cursorOffset - 1) + 1;
+  const lineEnd = text.indexOf('\n', cursorOffset);
+  const line = text.substring(lineStart, lineEnd === -1 ? text.length : lineEnd).trim();
 
-  let wordStart = beforeCursor.length;
-  for (let i = beforeCursor.length - 1; i >= 0; i--) {
-    if (/\s/.test(beforeCursor[i])) {
-      break;
+  const cursorLineOFfset = cursorOffset - lineStart;
+  const words = line.split(/\s+/).filter(w => w.length > 0);
+  let pos = 0;
+  for (let i = 0; i < words.length; i++) {
+    const wordStart = line.indexOf(words[i], pos);
+    const wordEnd = wordStart + words[i].length;
+    if (cursorLineOFfset >= wordStart && cursorLineOFfset <= wordEnd) {
+      return { word: words[i], line, wordIndex: i };
     }
-    wordStart = i;
+    pos = wordEnd;
   }
 
-  let wordEnd = 0;
-  for (let i = 0; i < afterCursor.length; i++) {
-    if (/\s/.test(afterCursor[i])) {
-      break;
-    }
-    wordEnd = i + 1;
-  }
-
-  const word = beforeCursor.substring(wordStart) + afterCursor.substring(0, wordEnd);
-
-  if (!word.trim()) {
-    return null;
-  }
-
-  const wordsBeforeCursor = beforeCursor.substring(0, wordStart).split(/\s+/).filter(w => w.length > 0);
-  const wordIndex = wordsBeforeCursor.length;
-
-  return {
-    word: word.trim(),
-    lineText: text.trim(),
-    wordIndex: wordIndex,
-  };
+  return null;
 }
 
 // Plugin to track cursor changes and emit active word
-function activeWordPlugin(onActiveWordChange?: (context: { word: string; lineText: string; wordIndex: number } | null) => void) {
+function activeWordPlugin(onActiveWordChange?: (context: { word: string; line: string; wordIndex: number } | null) => void) {
   return new Plugin({
     view() {
       return {
