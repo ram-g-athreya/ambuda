@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 import ambuda
 from ambuda import database as db
 from ambuda import queries as q
+from ambuda.models.proofing import ProjectStatus
 from ambuda.seed.utils.data_utils import create_db
 from ambuda.tasks.projects import (
     create_project_from_local_pdf_inner,
@@ -150,6 +151,86 @@ def export_text(text_slug):
         )
 
     click.echo("All exports completed successfully.")
+
+
+BHAGAVAD_GITA_VERSES = [
+    "धृतराष्ट्र उवाच\nधर्मक्षेत्रे कुरुक्षेत्रे समवेता युयुत्सवः।\nमामकाः पाण्डवाश्चैव किमकुर्वत सञ्जय॥",
+    "सञ्जय उवाच\nदृष्ट्वा तु पाण्डवानीकं व्यूढं दुर्योधनस्तदा।\nआचार्यमुपसंगम्य राजा वचनमब्रवीत्॥",
+    "पश्यैतां पाण्डुपुत्राणामाचार्य महतीं चमूम्।\nव्यूढां द्रुपदपुत्रेण तव शिष्येण धीमता॥",
+    "अत्र शूरा महेष्वासा भीमार्जुनसमा युधि।\nयुयुधानो विराटश्च द्रुपदश्च महारथः॥",
+    "धृष्टकेतुश्चेकितानः काशिराजश्च वीर्यवान्।\nपुरुजित्कुन्तिभोजश्च शैब्यश्च नरपुंगवः॥",
+    "युधामन्युश्च विक्रान्त उत्तमौजाश्च वीर्यवान्।\nसौभद्रो द्रौपदेयाश्च सर्व एव महारथाः॥",
+    "अस्माकं तु विशिष्टा ये तान्निबोध द्विजोत्तम।\nनायका मम सैन्यस्य संज्ञार्थं तान्ब्रवीमि ते॥",
+    "भवान्भीष्मश्च कर्णश्च कृपश्च समितिञ्जयः।\nअश्वत्थामा विकर्णश्च सौमदत्तिस्तथैव च॥",
+    "अन्ये च बहवः शूरा मदर्थे त्यक्तजीविताः।\nनानाशस्त्रप्रहरणाः सर्वे युद्धविशारदाः॥",
+    "अपर्याप्तं तदस्माकं बलं भीष्माभिरक्षितम्।\nपर्याप्तं त्विदमेतेषां बलं भीमाभिरक्षितम्॥",
+]
+
+
+@cli.command()
+def create_toy_data():
+    """Create a dummy proofing project for development/onboarding."""
+    import tempfile
+    import fitz
+
+    display_title = "Bhagavad Gita Sample"
+
+    current_app = ambuda.create_app("development")
+    with current_app.app_context():
+        session = q.get_session()
+
+        stmt = select(db.User)
+        user = session.scalars(stmt).first()
+        if not user:
+            raise click.ClickException(
+                "No users found in the database. "
+                "Please create a user first with `create-user`."
+            )
+
+        slug = slugify(display_title)
+        existing = session.scalars(select(db.Project).filter_by(slug=slug)).first()
+        if existing:
+            raise click.ClickException(f'Project "{display_title}" already exists.')
+
+        pdf_file = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+        doc = fitz.open()
+        for i, verse in enumerate(BHAGAVAD_GITA_VERSES, start=1):
+            page = doc.new_page()
+            where = fitz.Point(50, 50)
+            page.insert_text(where, f"Page {i}", fontsize=24)
+            where = fitz.Point(50, 100)
+            page.insert_text(where, verse, fontsize=16)
+        doc.save(pdf_file.name)
+        doc.close()
+
+        create_project_from_local_pdf_inner(
+            pdf_path=pdf_file.name,
+            display_title=display_title,
+            app_environment=current_app.config["AMBUDA_ENVIRONMENT"],
+            creator_id=user.id,
+            task_status=LocalTaskStatus(),
+        )
+
+        project = session.scalars(select(db.Project).filter_by(slug=slug)).first()
+        project.status = ProjectStatus.ACTIVE
+        session.flush()
+
+        stmt = select(db.PageStatus).filter_by(name="reviewed-0")
+        unreviewed = session.scalars(stmt).one()
+
+        for page, verse in zip(project.pages, BHAGAVAD_GITA_VERSES):
+            content = f"<page><verse>{verse}</verse></page>"
+            revision = db.Revision(
+                project_id=project.id,
+                page_id=page.id,
+                author_id=user.id,
+                status_id=unreviewed.id,
+                content=content,
+            )
+            session.add(revision)
+
+        session.commit()
+        click.echo(f'Created toy project "{display_title}" with 10 pages.')
 
 
 if __name__ == "__main__":
