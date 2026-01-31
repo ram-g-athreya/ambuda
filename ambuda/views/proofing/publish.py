@@ -1,6 +1,7 @@
 """Publishing routes for converting proofing projects into published texts."""
 
 import dataclasses as dc
+import re
 from datetime import UTC, datetime
 from xml.etree import ElementTree as ET
 
@@ -21,12 +22,33 @@ import ambuda.utils.text_publishing as publishing_utils
 from ambuda import database as db
 from ambuda import queries as q
 from ambuda.enums import SitePageStatus
-from ambuda.models.proofing import ProjectStatus, PublishConfig, ProjectConfig
+from ambuda.models.proofing import (
+    LanguageCode,
+    ProjectStatus,
+    PublishConfig,
+    ProjectConfig,
+)
 from ambuda.models.texts import TextStatus
 from ambuda.utils import diff as diff_utils
 from ambuda.utils import project_utils
 from ambuda.utils.text_publishing import TEIDocument
 from ambuda.views.proofing.decorators import p2_required
+
+
+_SLUG_RE = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$")
+
+
+def _validate_slug(slug: str) -> str | None:
+    if not slug:
+        return "Slug is required."
+    if not _SLUG_RE.match(slug):
+        return (
+            f"Invalid slug '{slug}': must contain only lowercase letters, digits, "
+            "and hyphens; must start and end with a letter or digit."
+        )
+    if "--" in slug:
+        return f"Invalid slug '{slug}': consecutive dashes are not allowed."
+    return None
 
 
 bp = Blueprint("publish", __name__)
@@ -55,15 +77,34 @@ def config(slug):
             flash(f"Validation error: {e}", "error")
             return default()
 
+        for pc in new_config.publish:
+            slug_error = _validate_slug(pc.slug)
+            if slug_error:
+                flash(slug_error, "error")
+                return default()
+
+        session = q.get_session()
         try:
             old_config = ProjectConfig.model_validate_json(project_.config or "{}")
-        except Exception as e:
-            flash(f"Validation error: {e}", "error")
-            return default()
+        except Exception:
+            old_config = ProjectConfig()
+        old_slugs = {c.slug for c in old_config.publish}
+
+        for pc in new_config.publish:
+            if pc.slug not in old_slugs:
+                existing_text = session.execute(
+                    sqla.select(db.Text).where(db.Text.slug == pc.slug)
+                ).scalar_one_or_none()
+                if existing_text:
+                    flash(
+                        f"A text with slug '{pc.slug}' already exists. "
+                        "Please choose a different slug.",
+                        "error",
+                    )
+                    return default()
 
         # TODO: tighten restrictions here -- should only be able to update 'publish' ?
         if new_config != old_config:
-            session = q.get_session()
             project_.config = new_config.model_dump_json()
             session.commit()
             flash("Configuration saved successfully.", "success")
@@ -90,11 +131,14 @@ def config(slug):
         session.execute(sqla.select(db.Author).order_by(db.Author.name)).scalars().all()
     )
 
+    language_labels = {code.value: code.label for code in LanguageCode}
+
     return render_template(
         "proofing/projects/publish.html",
         project=project_,
         publish_config=config,
         publish_config_schema=config_schema,
+        language_labels=language_labels,
         genres=genres,
         authors=authors,
     )

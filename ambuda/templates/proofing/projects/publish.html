@@ -9,6 +9,7 @@
 {% block sidebar %}{{ m.main_nav('projects', current_user=current_user) }}{% endblock %}
 
 
+
 {% block content %}
 {{ m.project_header_nested('Publish', project) }}
 {{ m.project_tabs(project=project, active='publish', is_mod=current_user.is_moderator) }}
@@ -17,6 +18,9 @@
   window.PUBLISH_CONFIG = {{ publish_config|tojson|safe }};
   window.PUBLISH_CONFIG_SCHEMA = {{ publish_config_schema|tojson|safe }};
   window.PROJECT_SLUG = {{ project.slug|tojson|safe }};
+  window.LANGUAGE_LABELS = {{ language_labels|tojson|safe }};
+  window.GENRE_NAMES = {{ genres|map(attribute='name')|list|tojson|safe }};
+  window.AUTHOR_NAMES = {{ authors|map(attribute='name')|list|tojson|safe }};
 </script>
 
 <div class="prose max-w-none">
@@ -32,93 +36,198 @@
       <div class="mb-6">
         <div class="flex justify-between items-center mb-4">
           <h3 class="text-lg font-bold">Publish configs</h3>
-          <button type="button"
-                  @click="addPublishEntry()"
-                  class="btn btn-basic text-sm">
-            + Add config
-          </button>
+          <button type="button" @click="addPublishEntry()" class="btn btn-basic text-sm">+ Add config</button>
         </div>
 
         <template x-for="(entry, index) in config.publish" :key="index">
-          <div class="border border-slate-300 rounded p-4 mb-4 bg-white">
-            <div class="flex justify-between items-start mb-3">
-              <h4 class="font-medium text-slate-700" x-text="'Config ' + (index + 1)"></h4>
-              <div class="flex gap-2">
+          <div class="border border-slate-300 rounded mb-2 bg-white">
+            {# Collapsed header #}
+            <div class="flex justify-between items-center px-3 py-2 cursor-pointer select-none"
+                 @click="entry._expanded = !entry._expanded">
+              <div class="flex items-center gap-2">
+                <svg :class="entry._expanded ? 'rotate-90' : ''" class="w-3.5 h-3.5 shrink-0 text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/>
+                </svg>
+                <span class="font-medium text-sm text-slate-700" x-text="getConfigLabel(entry)"></span>
+              </div>
+              <div class="flex items-center gap-2" @click.stop>
                 <a :href="getPreviewUrl(entry.slug)"
-                   :class="entry.slug ? 'btn btn-basic text-sm' : 'btn btn-basic text-sm opacity-50 cursor-not-allowed'"
-                   :disabled="!entry.slug">
-                  Preview
-                </a>
-                <button type="button"
-                        @click="removePublishEntry(index)"
-                        class="text-red-600 hover:text-red-800 text-sm">
-                  Remove
-                </button>
+                   :class="entry.slug ? 'text-sm text-slate-600 hover:text-slate-900 no-underline' : 'text-sm text-slate-300 cursor-not-allowed no-underline'"
+                   :disabled="!entry.slug">Preview</a>
+                <button type="button" @click="removePublishEntry(index)"
+                        class="text-red-500 hover:text-red-700 text-sm">Remove</button>
               </div>
             </div>
 
-            <div class="grid grid-cols-2 gap-4">
-              <template x-for="field in fields" :key="field.name">
-                <div>
-                  <label class="block text-sm font-medium text-slate-700 mb-1">
-                    <span x-text="field.label"></span>
-                    <span x-show="field.required" class="text-red-500">*</span>
-                  </label>
+            {# Expanded fields #}
+            <div x-show="entry._expanded" class="px-3 pb-3">
+              <div class="grid grid-cols-2 gap-4">
+                <template x-for="field in fields" :key="field.name">
+                  <div>
+                    {# Field label with optional action buttons #}
+                    <label class="flex items-center text-sm font-medium text-slate-700 mb-1">
+                      <span x-text="field.label"></span>
+                      <span x-show="field.required" class="text-red-500">*</span>
 
-                  <template x-if="field.name === 'author'">
-                    <input type="text"
-                           x-model="entry[field.name]"
-                           :required="field.required"
-                           :placeholder="field.placeholder"
-                           list="authors-datalist"
-                           class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
-                  </template>
-
-                  <template x-if="field.name === 'genre'">
-                    <input type="text"
-                           x-model="entry[field.name]"
-                           :required="field.required"
-                           :placeholder="field.placeholder"
-                           list="genres-datalist"
-                           class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
-                  </template>
-
-                  <template x-if="field.type === 'string' && !field.enum && field.name !== 'author' && field.name !== 'genre'">
-                    <input type="text"
-                           x-model="entry[field.name]"
-                           :required="field.required"
-                           :placeholder="field.placeholder"
-                           class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
-                  </template>
-
-                  <template x-if="field.type === 'string' && field.enum">
-                    <select x-model="entry[field.name]"
-                            :required="field.required"
-                            class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
-                      <option value="">-- Select --</option>
-                      <template x-for="option in field.enum" :key="option">
-                        <option :value="option" x-text="option"></option>
+                      <template x-if="field.name === 'author'">
+                        <button type="button"
+                                @click.stop="newAuthorOpen = !newAuthorOpen; newAuthorName = ''"
+                                class="ml-1 inline-flex items-center justify-center w-4 h-4 text-xs font-bold rounded text-green-600 hover:bg-green-100"
+                                title="Add new author">+</button>
                       </template>
-                    </select>
-                  </template>
 
-                  <template x-if="field.type === 'number' || field.type === 'integer'">
-                    <input type="number"
-                           x-model="entry[field.name]"
-                           :required="field.required"
-                           :placeholder="field.placeholder"
-                           class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
-                  </template>
+                      <template x-if="field.name === 'genre'">
+                        <button type="button"
+                                @click.stop="newGenreOpen = !newGenreOpen; newGenreName = ''"
+                                class="ml-1 inline-flex items-center justify-center w-4 h-4 text-xs font-bold rounded text-green-600 hover:bg-green-100"
+                                title="Add new genre">+</button>
+                      </template>
 
-                  <template x-if="field.type === 'boolean'">
-                    <input type="checkbox"
-                           x-model="entry[field.name]"
-                           class="w-4 h-4 border border-slate-300 rounded">
-                  </template>
+                      <template x-if="field.name === 'target'">
+                        <span class="relative inline-block ml-1" @click.stop>
+                          <button type="button" @click="filterHelpOpen = !filterHelpOpen"
+                                  class="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold border border-slate-400 rounded-full text-slate-500 hover:bg-slate-200"
+                                  title="Filter syntax help">i</button>
+                          <div x-show="filterHelpOpen" @click.away="filterHelpOpen = false"
+                               class="absolute left-0 mt-1 bg-white border border-slate-300 rounded shadow-lg z-20 w-80 p-3 text-xs">
+                            <h4 class="font-semibold mb-2">Filter syntax</h4>
+                            <p class="text-slate-600 mb-2">Selects which blocks to include using S-expression syntax.</p>
+                            <div class="space-y-1 mb-3 text-slate-700">
+                              <div><code class="bg-slate-200 px-1 rounded">(image 1 10)</code> - pages 1 through 10</div>
+                              <div><code class="bg-slate-200 px-1 rounded">(image 5)</code> - page 5 only</div>
+                              <div><code class="bg-slate-200 px-1 rounded">(page 1 10)</code> - alias for image</div>
+                              <div><code class="bg-slate-200 px-1 rounded">(label foo)</code> - blocks with label "foo"</div>
+                              <div><code class="bg-slate-200 px-1 rounded">(tag verse)</code> - blocks of type verse</div>
+                              <div><code class="bg-slate-200 px-1 rounded">(tag p)</code> - blocks of type p</div>
+                            </div>
+                            <h4 class="font-semibold mb-2">Combining conditions</h4>
+                            <div class="space-y-1 text-slate-700">
+                              <div><code class="bg-slate-200 px-1 rounded">(and (page 5 10) (tag verse))</code> - AND</div>
+                              <div><code class="bg-slate-200 px-1 rounded">(or (tag p) (tag verse))</code> - OR</div>
+                              <div><code class="bg-slate-200 px-1 rounded">(not (tag ignore))</code> - NOT</div>
+                            </div>
+                            <p class="text-slate-500 mt-2">Leave empty to include all blocks.</p>
+                          </div>
+                        </span>
+                      </template>
+                    </label>
 
-                  <p x-show="field.description" x-text="field.description" class="text-xs text-slate-500 mt-1"></p>
-                </div>
-              </template>
+                    {# --- Field inputs --- #}
+
+                    <template x-if="field.name === 'author'">
+                      <div>
+                        <div class="relative" @click.away="pickers.author.close(entry)">
+                          <input type="text"
+                                 :value="pickers.author.displayValue(entry)"
+                                 @focus="pickers.author.open(entry)"
+                                 @input="pickers.author.search(entry, $event.target.value)"
+                                 @keydown="pickers.author.keydown(entry, $event)"
+                                 :placeholder="field.placeholder"
+                                 class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+                          <div x-show="entry._author_open" class="absolute z-20 mt-1 w-full bg-white border border-slate-300 rounded shadow-lg max-h-48 overflow-y-auto">
+                            <template x-for="(name, i) in pickers.author.filtered(entry)" :key="name">
+                              <button type="button" @click="pickers.author.select(entry, name)"
+                                      :class="i === (entry._author_sel || 0) ? 'bg-blue-100' : 'hover:bg-slate-50'"
+                                      class="block w-full text-left px-3 py-1.5 text-sm" x-text="name"></button>
+                            </template>
+                            <div x-show="pickers.author.filtered(entry).length === 0" class="px-3 py-2 text-sm text-slate-400">No matches</div>
+                          </div>
+                        </div>
+                        <div x-show="newAuthorOpen" class="mt-2 flex items-center gap-2">
+                          <input type="text" x-model="newAuthorName"
+                                 @keydown.enter.prevent="addAuthor()" @keydown.escape.prevent="newAuthorOpen = false"
+                                 placeholder="New author name"
+                                 class="flex-1 border border-slate-300 rounded px-3 py-1.5 text-sm">
+                          <button type="button" @click="addAuthor()" class="btn btn-basic text-xs">Add</button>
+                          <button type="button" @click="newAuthorOpen = false" class="text-slate-400 hover:text-slate-600 text-xs">Cancel</button>
+                        </div>
+                      </div>
+                    </template>
+
+                    <template x-if="field.name === 'genre'">
+                      <div>
+                        <div class="relative" @click.away="pickers.genre.close(entry)">
+                          <input type="text"
+                                 :value="pickers.genre.displayValue(entry)"
+                                 @focus="pickers.genre.open(entry)"
+                                 @input="pickers.genre.search(entry, $event.target.value)"
+                                 @keydown="pickers.genre.keydown(entry, $event)"
+                                 :placeholder="field.placeholder"
+                                 class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+                          <div x-show="entry._genre_open" class="absolute z-20 mt-1 w-full bg-white border border-slate-300 rounded shadow-lg max-h-48 overflow-y-auto">
+                            <template x-for="(name, i) in pickers.genre.filtered(entry)" :key="name">
+                              <button type="button" @click="pickers.genre.select(entry, name)"
+                                      :class="i === (entry._genre_sel || 0) ? 'bg-blue-100' : 'hover:bg-slate-50'"
+                                      class="block w-full text-left px-3 py-1.5 text-sm" x-text="name"></button>
+                            </template>
+                            <div x-show="pickers.genre.filtered(entry).length === 0" class="px-3 py-2 text-sm text-slate-400">No matches</div>
+                          </div>
+                        </div>
+                        <div x-show="newGenreOpen" class="mt-2 flex items-center gap-2">
+                          <input type="text" x-model="newGenreName"
+                                 @keydown.enter.prevent="addGenre()" @keydown.escape.prevent="newGenreOpen = false"
+                                 placeholder="New genre name (Devanagari)"
+                                 class="flex-1 border border-slate-300 rounded px-3 py-1.5 text-sm">
+                          <button type="button" @click="addGenre()" class="btn btn-basic text-xs">Add</button>
+                          <button type="button" @click="newGenreOpen = false" class="text-slate-400 hover:text-slate-600 text-xs">Cancel</button>
+                        </div>
+                      </div>
+                    </template>
+
+                    <template x-if="field.name === 'language'">
+                      <div class="relative" @click.away="pickers.lang.close(entry)">
+                        <input type="text"
+                               :value="pickers.lang.displayValue(entry)"
+                               @focus="pickers.lang.open(entry)"
+                               @input="pickers.lang.search(entry, $event.target.value)"
+                               @keydown="pickers.lang.keydown(entry, $event)"
+                               :placeholder="field.placeholder"
+                               class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+                        <div x-show="entry._lang_open" class="absolute z-20 mt-1 w-full bg-white border border-slate-300 rounded shadow-lg max-h-48 overflow-y-auto">
+                          <template x-for="(opt, i) in pickers.lang.filtered(entry)" :key="opt.code">
+                            <button type="button" @click="pickers.lang.select(entry, opt)"
+                                    :class="i === (entry._lang_sel || 0) ? 'bg-blue-100' : 'hover:bg-slate-50'"
+                                    class="block w-full text-left px-3 py-1.5 text-sm">
+                              <span x-text="opt.label"></span>
+                              <span class="text-slate-400 ml-1" x-text="'(' + opt.code + ')'"></span>
+                            </button>
+                          </template>
+                          <div x-show="pickers.lang.filtered(entry).length === 0" class="px-3 py-2 text-sm text-slate-400">No matches</div>
+                        </div>
+                      </div>
+                    </template>
+
+                    <template x-if="field.type === 'string' && !field.enum && !['author', 'genre'].includes(field.name) && field.name !== 'language'">
+                      <input type="text" x-model="entry[field.name]"
+                             :required="field.required" :placeholder="field.placeholder"
+                             class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+                    </template>
+
+                    <template x-if="field.type === 'string' && field.enum && field.name !== 'language'">
+                      <select x-model="entry[field.name]" :required="field.required"
+                              class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+                        <option value="">-- Select --</option>
+                        <template x-for="option in field.enum" :key="option">
+                          <option :value="option" x-text="option"></option>
+                        </template>
+                      </select>
+                    </template>
+
+                    <template x-if="field.type === 'number' || field.type === 'integer'">
+                      <input type="number" x-model="entry[field.name]"
+                             :required="field.required" :placeholder="field.placeholder"
+                             class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+                    </template>
+
+                    <template x-if="field.type === 'boolean'">
+                      <input type="checkbox" x-model="entry[field.name]"
+                             class="w-4 h-4 border border-slate-300 rounded">
+                    </template>
+
+                    <p x-show="field.description" x-text="field.description" class="text-xs text-slate-500 mt-1"></p>
+                  </div>
+                </template>
+              </div>
             </div>
           </div>
         </template>
@@ -129,12 +238,8 @@
       </div>
 
       <div class="flex gap-3 items-center">
-        <button type="submit" class="btn btn-submit">
-          Save Configuration
-        </button>
-        <button type="button"
-                @click="showJSON = !showJSON"
-                class="btn btn-basic text-sm">
+        <button type="submit" class="btn btn-submit">Save Configuration</button>
+        <button type="button" @click="showJSON = !showJSON" class="btn btn-basic text-sm">
           <span x-text="showJSON ? 'Hide JSON' : 'Show JSON'"></span>
         </button>
       </div>
@@ -142,27 +247,13 @@
       <div x-show="showJSON" class="mt-4 bg-slate-50 rounded border border-slate-200 p-4">
         <div class="flex justify-between items-center mb-2">
           <h4 class="font-bold text-sm">Generated JSON</h4>
-          <button type="button" @click="copyJSON()" class="btn btn-basic text-xs">
-            Copy
-          </button>
+          <button type="button" @click="copyJSON()" class="btn btn-basic text-xs">Copy</button>
         </div>
         <pre class="text-xs overflow-auto max-h-96 p-3 rounded border border-slate-300 bg-white"
              x-text="generateJSON()"></pre>
       </div>
     </form>
 
-    {# HTML5 datalists for autocomplete #}
-    <datalist id="authors-datalist">
-      {% for author in authors %}
-        <option value="{{ author.name }}">
-      {% endfor %}
-    </datalist>
-
-    <datalist id="genres-datalist">
-      {% for genre in genres %}
-        <option value="{{ genre.name }}">
-      {% endfor %}
-    </datalist>
   </div>
 </div>
 

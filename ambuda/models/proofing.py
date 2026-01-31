@@ -3,7 +3,6 @@
 import uuid
 from datetime import datetime, UTC
 from enum import StrEnum
-
 from pydantic import BaseModel, Field
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON, String, Table, event
 from sqlalchemy import Text as Text_
@@ -54,13 +53,54 @@ class Genre(Base):
         return self.name
 
 
+class LanguageCode(StrEnum):
+    """ISO 639 language codes relevant to Ambuda."""
+
+    SA = "sa"  # Sanskrit
+    EN = "en"  # English
+    HI = "hi"  # Hindi
+    TA = "ta"  # Tamil
+    TE = "te"  # Telugu
+    KN = "kn"  # Kannada
+    ML = "ml"  # Malayalam
+    MR = "mr"  # Marathi
+    GU = "gu"  # Gujarati
+    BN = "bn"  # Bengali
+    PA = "pa"  # Punjabi
+    OR = "or"  # Odia
+    PI = "pi"  # Pali
+    BO = "bo"  # Tibetan
+
+    @property
+    def label(self) -> str:
+        return _LANGUAGE_LABELS[self.value]
+
+
+_LANGUAGE_LABELS: dict[str, str] = {
+    "sa": "Sanskrit",
+    "en": "English",
+    "hi": "Hindi",
+    "ta": "Tamil",
+    "te": "Telugu",
+    "kn": "Kannada",
+    "ml": "Malayalam",
+    "mr": "Marathi",
+    "gu": "Gujarati",
+    "bn": "Bengali",
+    "pa": "Punjabi",
+    "or": "Odia",
+    "pi": "Pali",
+    "bo": "Tibetan",
+}
+
+
 class PublishConfig(BaseModel):
     slug: str
     title: str
     target: str | None = None
     author: str | None = None
     genre: str | None = None
-    language: str = "sa"
+    language: LanguageCode = LanguageCode.SA
     parent_slug: str | None = None
 
 
