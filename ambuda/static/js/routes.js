@@ -18,7 +18,7 @@ export default {
 
   publishProjectText: (projectSlug, textSlug) => `/proofing/${projectSlug}/publish/${textSlug}/preview`,
 
-  proofingAutoStructure: () => `/api/proofing/auto-structure`,
+  proofingAutoStructure: () => '/api/proofing/auto-structure',
 
   // TODO: where to put this?
   getTextSlug: () => {

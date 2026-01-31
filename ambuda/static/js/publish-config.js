@@ -9,7 +9,9 @@ function toHK(str) {
   return Sanscript.t(str, 'devanagari', 'hk');
 }
 
-function createPicker(field, component, { getItems, displayValue, match, onSelect }) {
+function createPicker(field, component, {
+  getItems, displayValue, match, onSelect,
+}) {
   const k = (suffix) => `_${field}_${suffix}`;
 
   return {
@@ -49,7 +51,7 @@ function createPicker(field, component, { getItems, displayValue, match, onSelec
       const query = (entry[k('query')] || '').toLowerCase();
       const items = getItems(component);
       if (!query) return items;
-      return items.filter(item => match(item, query));
+      return items.filter((item) => match(item, query));
     },
     select(entry, item) {
       if (!item) return;
@@ -97,8 +99,8 @@ export default () => ({
     };
     this.generateFieldsFromSchema();
     this.config = window.PUBLISH_CONFIG;
-    this.config.publish.forEach(entry => {
-      this.fields.forEach(f => { if (!(f.name in entry)) entry[f.name] = this.getDefaultValue(f); });
+    this.config.publish.forEach((entry) => {
+      this.fields.forEach((f) => { if (!(f.name in entry)) entry[f.name] = this.getDefaultValue(f); });
       entry._expanded = false;
     });
   },
@@ -123,10 +125,10 @@ export default () => ({
     const labels = { target: 'Filter' };
 
     this.fields = fieldOrder
-      .filter(name => properties[name])
-      .map(name => {
-        let prop = properties[name];
-        let type = prop.type;
+      .filter((name) => properties[name])
+      .map((name) => {
+        const prop = properties[name];
+        let { type } = prop;
         let enumValues = prop.enum;
 
         if (prop.$ref) {
@@ -135,7 +137,7 @@ export default () => ({
           enumValues ||= resolved.enum;
         }
         if (prop.anyOf) {
-          const nonNull = prop.anyOf.find(t => t.type !== 'null');
+          const nonNull = prop.anyOf.find((t) => t.type !== 'null');
           if (nonNull) { type = nonNull.type; enumValues = nonNull.enum; }
         }
 
@@ -177,7 +179,7 @@ export default () => ({
   // -- Utilities --
 
   titleCase(str) {
-    return str.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    return str.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
   },
 
   getDefaultValue(field) {
@@ -192,7 +194,7 @@ export default () => ({
   },
 
   isEntryEmpty(entry) {
-    return this.fields.every(f => {
+    return this.fields.every((f) => {
       const v = entry[f.name];
       return v === '' || v === null || v === undefined || v === false;
     });
@@ -200,7 +202,7 @@ export default () => ({
 
   addPublishEntry() {
     const newEntry = { _expanded: true };
-    this.fields.forEach(f => { newEntry[f.name] = this.getDefaultValue(f); });
+    this.fields.forEach((f) => { newEntry[f.name] = this.getDefaultValue(f); });
     this.config.publish.push(newEntry);
   },
 
@@ -218,9 +220,9 @@ export default () => ({
 
   generateJSON() {
     const cleaned = {
-      publish: this.config.publish.map(entry => {
+      publish: this.config.publish.map((entry) => {
         const clean = {};
-        this.fields.forEach(f => {
+        this.fields.forEach((f) => {
           const v = entry[f.name];
           if (f.required || (v !== '' && v !== null && v !== undefined)) clean[f.name] = v;
         });
@@ -234,7 +236,7 @@ export default () => ({
   copyJSON() {
     navigator.clipboard.writeText(this.generateJSON())
       .then(() => alert('Copied to clipboard!'))
-      .catch(err => console.error('Copy failed:', err));
+      .catch((err) => console.error('Copy failed:', err));
   },
 
   submitForm(event) {

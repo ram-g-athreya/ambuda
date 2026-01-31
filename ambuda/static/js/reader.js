@@ -183,12 +183,12 @@ export default () => ({
           }
           node.parentNode.replaceChild(fragment, node);
         } else if (node.nodeType === Node.ELEMENT_NODE) {
-          Array.from(node.childNodes).forEach(child => insertSoftHyphens(child));
+          Array.from(node.childNodes).forEach((child) => insertSoftHyphens(child));
         }
       }
 
       const elements = document.querySelectorAll('s-p');
-      elements.forEach(el => {
+      elements.forEach((el) => {
         insertSoftHyphens(el);
       });
     });
@@ -465,7 +465,7 @@ export default () => ({
         if (resp.status === 401) {
           alert('Please log in to bookmark verses');
         } else {
-          alert('Failed to toggle bookmark: ' + (error.error || 'Unknown error'));
+          alert(`Failed to toggle bookmark: ${error.error || 'Unknown error'}`);
         }
       }
     } catch (error) {

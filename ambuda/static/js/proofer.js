@@ -26,7 +26,6 @@ const ImageLayout = {
   Top: 'image-top',
   Bottom: 'image-bottom',
 };
-const ALL_LAYOUTS = [ImageLayout.Left, ImageLayout.Right, ImageLayout.Top, ImageLayout.Bottom];
 
 const ImageClasses = {
   Left: 'flex flex-row-reverse h-[90vh]',
@@ -38,6 +37,13 @@ const ImageClasses = {
 const ViewType = {
   Visual: 'visual',
   XML: 'xml',
+};
+
+const RevisionStatus = {
+  Skip: 'skip',
+  Reviewed0: 'reviewed-0',
+  Reviewed1: 'reviewed-1',
+  Reviewed2: 'reviewed-2',
 };
 
 const ModalType = {
@@ -54,7 +60,7 @@ function parseBoundingBoxes(tsvData) {
   if (!tsvData) return [];
 
   const lines = tsvData.trim().split('\n');
-  return lines.map(line => {
+  return lines.map((line) => {
     const parts = line.split('\t');
     if (parts.length >= 5) {
       return {
@@ -66,7 +72,7 @@ function parseBoundingBoxes(tsvData) {
       };
     }
     return null;
-  }).filter(box => box !== null);
+  }).filter((box) => box !== null);
 }
 
 // Calculate Levenshtein distance between two strings
@@ -89,9 +95,9 @@ function levenshteinDistance(str1, str2) {
         dp[i][j] = dp[i - 1][j - 1];
       } else {
         dp[i][j] = Math.min(
-          dp[i - 1][j] + 1,      // deletion
-          dp[i][j - 1] + 1,      // insertion
-          dp[i - 1][j - 1] + 1   // substitution
+          dp[i - 1][j] + 1, // deletion
+          dp[i][j - 1] + 1, // insertion
+          dp[i - 1][j - 1] + 1, // substitution
         );
       }
     }
@@ -119,7 +125,7 @@ function groupBoundingBoxesByLine(boxes) {
   const sortedBoxes = [...boxes].sort((a, b) => {
     const yDiff = a.y1 - b.y1;
     if (Math.abs(yDiff) < Y_SENSITIVITY) {
-       // If y-coordinates are very close, sort by x
+      // If y-coordinates are very close, sort by x
       return a.x1 - b.x1;
     }
     return yDiff;
@@ -147,10 +153,10 @@ function groupBoundingBoxesByLine(boxes) {
     lines.push(currentLine);
   }
 
-  return lines.map(lineBoxes => {
-    const text = lineBoxes.map(box => box.text).join(' ');
+  return lines.map((lineBoxes) => {
+    const text = lineBoxes.map((box) => box.text).join(' ');
     return {
-      text: text,
+      text,
       boxes: lineBoxes,
     };
   });
@@ -282,9 +288,9 @@ export default () => ({
   },
 
   getCommands() {
-    const markCommands = INLINE_MARKS.map(mark => ({
+    const markCommands = INLINE_MARKS.map((mark) => ({
       label: `Edit > ${mark.label}`,
-      action: () => this.toggleMark(mark.name)
+      action: () => this.toggleMark(mark.name),
     }));
 
     return [
@@ -311,7 +317,7 @@ export default () => ({
   getFilteredCommands() {
     const query = this.commandPaletteQuery;
     if (!query) return this.getCommands();
-    return this.getCommands().filter(cmd => fuzzyMatch(query, cmd.label));
+    return this.getCommands().filter((cmd) => fuzzyMatch(query, cmd.label));
   },
 
   openCommandPalette() {
@@ -420,14 +426,13 @@ export default () => ({
   },
 
   getLayoutClasses() {
-    if (this.layout === ImageLayout.Left) {
-      return ImageClasses.Left;
-    } else if (this.layout === ImageLayout.Top) {
-      return ImageClasses.Top;
-    } else if (this.layout === ImageLayout.Bottom) {
-      return ImageClasses.Bottom;
-    }
-    return ImageClasses.Right;
+    const layoutClassMap = {
+      [ImageLayout.Left]: ImageClasses.Left,
+      [ImageLayout.Right]: ImageClasses.Right,
+      [ImageLayout.Top]: ImageClasses.Top,
+      [ImageLayout.Bottom]: ImageClasses.Bottom,
+    };
+    return layoutClassMap[this.layout] || ImageClasses.Right;
   },
 
   // Callbacks
@@ -444,96 +449,53 @@ export default () => ({
 
   // OCR controls
 
-  async runOCR() {
-    this.isRunningOCR = true;
-
-    const { pathname } = window.location;
-    const url = pathname.replace('/proofing/', '/api/ocr/');
-
-    const content = await fetch(url)
-      .then((response) => {
-        if (response.ok) {
-          return response.text();
-        }
-        return '(server error)';
-      });
+  async fetchAndApply(apiPath, options = {}) {
+    const url = window.location.pathname.replace('/proofing/', apiPath);
+    const response = await fetch(url, options);
+    const content = response.ok ? await response.text() : '(server error)';
     Alpine.raw(this.editor).setText(content);
     $('#content').value = content;
+  },
 
+  async runOCR() {
+    this.isRunningOCR = true;
+    await this.fetchAndApply('/api/ocr/');
     this.isRunningOCR = false;
   },
 
   // Currently disabled.
   async runLLMStructuring() {
     this.isRunningLLMStructuring = true;
-
-    const { pathname } = window.location;
-    const url = pathname.replace('/proofing/', '/api/llm-structuring/');
-    const currentContent = Alpine.raw(this.editor).getText();
-
-    const content = await fetch(url, {
+    const body = JSON.stringify({ content: Alpine.raw(this.editor).getText() });
+    await this.fetchAndApply('/api/llm-structuring/', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ content: currentContent }),
-    })
-      .then((response) => {
-        if (response.ok) {
-          return response.text();
-        }
-        return '(server error)';
-      });
-    Alpine.raw(this.editor).setText(content);
-    $('#content').value = content;
-
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    });
     this.isRunningLLMStructuring = false;
   },
 
   async runStructuring() {
     this.isRunningStructuring = true;
-
-    const { pathname } = window.location;
-    const url = pathname.replace('/proofing/', '/api/structuring/');
-
-    const currentContent = Alpine.raw(this.editor).getText();
-
-    const content = await fetch(url, {
+    const body = JSON.stringify({ content: Alpine.raw(this.editor).getText() });
+    await this.fetchAndApply('/api/structuring/', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ content: currentContent }),
-    })
-      .then((response) => {
-        if (response.ok) {
-          return response.text();
-        }
-        return '(server error)';
-      });
-    Alpine.raw(this.editor).setText(content);
-    $('#content').value = content;
-
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    });
     this.isRunningStructuring = false;
   },
 
   // Image zoom controls
 
-  increaseImageZoom() {
-    this.imageZoom *= 1.2;
-    this.imageViewer.viewport.zoomTo(this.imageZoom);
+  setImageZoom(zoom) {
+    this.imageZoom = zoom;
+    this.imageViewer.viewport.zoomTo(zoom);
     this.saveSettings();
   },
-  decreaseImageZoom() {
-    this.imageZoom *= 0.8;
-    this.imageViewer.viewport.zoomTo(this.imageZoom);
-    this.saveSettings();
-  },
-  resetImageZoom() {
-    this.imageZoom = this.imageViewer.viewport.getHomeZoom();
-    this.imageViewer.viewport.zoomTo(this.imageZoom);
-    this.saveSettings();
-  },
+  increaseImageZoom() { this.setImageZoom(this.imageZoom * 1.2); },
+  decreaseImageZoom() { this.setImageZoom(this.imageZoom * 0.8); },
+  resetImageZoom() { this.setImageZoom(this.imageViewer.viewport.getHomeZoom()); },
   fitImageWidth() {
     this.imageViewer.viewport.fitHorizontally();
     this.imageZoom = this.imageViewer.viewport.getZoom();
@@ -547,52 +509,26 @@ export default () => ({
 
   // Text zoom controls
 
-  increaseTextSize() {
-    this.textZoom += 0.1;
-    Alpine.raw(this.editor).setTextZoom(this.textZoom);
+  updateTextZoom(zoom) {
+    this.textZoom = zoom;
+    Alpine.raw(this.editor).setTextZoom(zoom);
     this.saveSettings();
   },
-  decreaseTextSize() {
-    this.textZoom = Math.max(0.5, this.textZoom - 0.1);
-    Alpine.raw(this.editor).setTextZoom(this.textZoom);
-    this.saveSettings();
-  },
-  resetTextSize() {
-    this.textZoom = 1;
-    Alpine.raw(this.editor).setTextZoom(this.textZoom);
-    this.saveSettings();
-  },
+  increaseTextSize() { this.updateTextZoom(this.textZoom + 0.1); },
+  decreaseTextSize() { this.updateTextZoom(Math.max(0.5, this.textZoom - 0.1)); },
+  resetTextSize() { this.updateTextZoom(1); },
 
   // Layout controls
 
-  displayImageOnLeft() {
-    this.layout = ImageLayout.Left;
+  setLayout(layout) {
+    this.layout = layout;
     this.layoutClasses = this.getLayoutClasses();
     this.saveSettings();
   },
-  displayImageOnRight() {
-    this.layout = ImageLayout.Right;
-    this.layoutClasses = this.getLayoutClasses();
-    this.saveSettings();
-  },
-  displayImageOnTop() {
-    this.layout = ImageLayout.Top;
-    this.layoutClasses = this.getLayoutClasses();
-    this.saveSettings();
-  },
-  displayImageOnBottom() {
-    this.layout = ImageLayout.Bottom;
-    this.layoutClasses = this.getLayoutClasses();
-    this.saveSettings();
-  },
-
-  displayVisualView() {
-    this.displayView(ViewType.Visual);
-  },
-
-  displayXMLView() {
-    this.displayView(ViewType.XML);
-  },
+  displayImageOnLeft() { this.setLayout(ImageLayout.Left); },
+  displayImageOnRight() { this.setLayout(ImageLayout.Right); },
+  displayImageOnTop() { this.setLayout(ImageLayout.Top); },
+  displayImageOnBottom() { this.setLayout(ImageLayout.Bottom); },
 
   displayView(viewMode) {
     // Already showing -- just return.
@@ -611,7 +547,6 @@ export default () => ({
         }, this.showAdvancedOptions, this.textZoom, (context) => {
           this.onActiveWordChange(context);
         });
-
       } catch (error) {
         this.xmlParseError = `Invalid XML: ${error.message}`;
         console.error('Failed to parse XML:', error);
@@ -630,6 +565,8 @@ export default () => ({
     this.saveSettings();
     Alpine.raw(this.editor).focus();
   },
+  displayVisualView() { this.displayView(ViewType.Visual); },
+  displayXMLView() { this.displayView(ViewType.XML); },
 
   toggleTrackBoundingBox() {
     this.trackBoundingBox = !this.trackBoundingBox;
@@ -703,7 +640,6 @@ export default () => ({
     this.activeModal = ModalType.Normalize;
   },
 
-
   applyNormalization() {
     this.changeSelectedText((text) => {
       let normalized = text;
@@ -734,7 +670,6 @@ export default () => ({
   openAutoStructureModal() {
     this.activeModal = ModalType.AutoStructure;
   },
-
 
   async applyAutoStructure() {
     const content = Alpine.raw(this.editor).getText();
@@ -767,7 +702,7 @@ export default () => ({
       }
     } catch (error) {
       console.error('Auto-structure failed:', error);
-      this.xmlParseError = 'Auto-structure failed: ' + error.message;
+      this.xmlParseError = `Auto-structure failed: ${error.message}`;
     } finally {
       this.isRunningStructuring = false;
     }
@@ -800,7 +735,7 @@ export default () => ({
     this.historyRevisions = [];
 
     const { pathname } = window.location;
-    const url = pathname.replace('/proofing/', '/api/proofing/') + '/history';
+    const url = `${pathname.replace('/proofing/', '/api/proofing/')}/history`;
 
     try {
       const response = await fetch(url);
@@ -817,18 +752,14 @@ export default () => ({
     }
   },
 
-
   getRevisionColorClass(status) {
-    if (status === 'reviewed-0') {
-      return 'bg-red-200 text-red-800';
-    } else if (status === 'reviewed-1') {
-      return 'bg-yellow-200 text-yellow-800';
-    } else if (status === 'reviewed-2') {
-      return 'bg-green-200 text-green-800';
-    } else if (status === 'skip') {
-      return 'bg-gray-200 text-gray-800';
-    }
-    return '';
+    const colorMap = {
+      [RevisionStatus.Reviewed0]: 'bg-red-200 text-red-800',
+      [RevisionStatus.Reviewed1]: 'bg-yellow-200 text-yellow-800',
+      [RevisionStatus.Reviewed2]: 'bg-green-200 text-green-800',
+      [RevisionStatus.Skip]: 'bg-gray-200 text-gray-800',
+    };
+    return colorMap[status] || '';
   },
 
   openSubmitModal() {
@@ -842,7 +773,6 @@ export default () => ({
     this.modalStatus = $('input[name="status"]')?.value || '';
     this.activeModal = ModalType.Submit;
   },
-
 
   generateChangesPreview() {
     const currentContent = Alpine.raw(this.editor).getText();
@@ -1036,9 +966,9 @@ export default () => ({
     // and all other dimensions (including y-axis) are scaled relative to the width.
     // This maintains the aspect ratio. So we divide ALL coordinates by image width.
     const x = box.x1 / imageSize.x;
-    const y = box.y1 / imageSize.x;  // Note: dividing by width, not height
+    const y = box.y1 / imageSize.x; // Note: dividing by width, not height
     const width = (box.x2 - box.x1) / imageSize.x;
-    const height = (box.y2 - box.y1) / imageSize.x;  // Note: dividing by width, not height
+    const height = (box.y2 - box.y1) / imageSize.x; // Note: dividing by width, not height
 
     const overlayElement = document.createElement('div');
     overlayElement.className = 'ocr-bounding-box-highlight';

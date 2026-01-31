@@ -1,6 +1,10 @@
-import { EditorState, Plugin, Transaction, Selection } from 'prosemirror-state';
+import {
+  EditorState, Plugin, Transaction, Selection,
+} from 'prosemirror-state';
 import { EditorView, Decoration, DecorationSet } from 'prosemirror-view';
-import { Schema, Node as PMNode, Mark, Fragment, DOMParser as PMDOMParser, DOMSerializer, NodeSpec, MarkSpec } from 'prosemirror-model';
+import {
+  Schema, Node as PMNode, Mark, Fragment, DOMParser as PMDOMParser, DOMSerializer, NodeSpec, MarkSpec,
+} from 'prosemirror-model';
 import { keymap } from 'prosemirror-keymap';
 import { history, undo as pmUndo, redo as pmRedo } from 'prosemirror-history';
 import { baseKeymap } from 'prosemirror-commands';
@@ -19,17 +23,9 @@ const BLOCK_TYPES = [
   { tag: 'metadata', label: 'Metadata', color: 'gray' },
 ];
 
-const BLOCK_TYPE_COLORS: Record<string, string> = {
-  'p': 'border-blue-400',
-  'verse': 'border-purple-400',
-  'heading': 'border-orange-400',
-  'title': 'border-indigo-400',
-  'subtitle': 'border-pink-400',
-  'footnote': 'border-green-400',
-  'trailer': 'border-teal-400',
-  'ignore': 'border-gray-300',
-  'metadata': 'border-gray-300',
-};
+const BLOCK_TYPE_COLORS: Record<string, string> = Object.fromEntries(
+  BLOCK_TYPES.map((bt) => [bt.tag, bt.color === 'gray' ? 'border-gray-300' : `border-${bt.color}-400`]),
+);
 
 // Nodes are the basic pieces of the document.
 const nodes: Record<string, NodeSpec> = {
@@ -90,7 +86,7 @@ const nodes: Record<string, NodeSpec> = {
 
 // Marks are labels attached to text.
 const marks: Record<string, MarkSpec> = Object.fromEntries(
-  INLINE_MARKS.map(markConfig => [
+  INLINE_MARKS.map((markConfig) => [
     markConfig.name,
     {
       parseDOM: [{ tag: markConfig.name }],
@@ -99,7 +95,7 @@ const marks: Record<string, MarkSpec> = Object.fromEntries(
       },
       ...(markConfig.excludes ? { excludes: markConfig.excludes } : {}),
     },
-  ])
+  ]),
 );
 
 const customSchema = new Schema({ nodes, marks });
@@ -131,7 +127,7 @@ function getWordAtCursor(state: EditorState): { word: string; lineText: string; 
   const line = text.substring(lineStart, lineEnd === -1 ? text.length : lineEnd).trim();
 
   const cursorLineOFfset = cursorOffset - lineStart;
-  const words = line.split(/\s+/).filter(w => w.length > 0);
+  const words = line.split(/\s+/).filter((w) => w.length > 0);
   let pos = 0;
   for (let i = 0; i < words.length; i++) {
     const wordStart = line.indexOf(words[i], pos);
@@ -210,17 +206,17 @@ function createBlockBelow(state: EditorState, dispatch?: (tr: Transaction) => vo
       currentPos = childEnd;
     });
 
-    let tr = state.tr;
+    let { tr } = state;
     const newCurrentBlock = state.schema.nodes.block.create(
       currentBlock.attrs,
-      contentBefore.length > 0 ? contentBefore : undefined
+      contentBefore.length > 0 ? contentBefore : undefined,
     );
     tr = tr.replaceWith(blockPos, blockPos + currentBlock.nodeSize, newCurrentBlock);
 
     const afterPos = blockPos + newCurrentBlock.nodeSize;
     const newBlock = state.schema.nodes.block.create(
       { type: 'p' },
-      contentAfter.length > 0 ? contentAfter : undefined
+      contentAfter.length > 0 ? contentAfter : undefined,
     );
     tr = tr.insert(afterPos, newBlock);
 
@@ -235,25 +231,79 @@ function createBlockBelow(state: EditorState, dispatch?: (tr: Transaction) => vo
 
 class BlockView {
   dom: HTMLElement;
+
   contentDOM: HTMLElement;
+
   node: PMNode;
+
   view: EditorView;
+
   getPos: () => number | undefined;
+
   controlsDOM: HTMLElement;
+
   typeSelect: HTMLSelectElement;
+
   textInput: HTMLInputElement;
+
   textLabel: HTMLSpanElement;
+
   nInput: HTMLInputElement;
+
   nLabel: HTMLSpanElement;
+
   markInput: HTMLInputElement;
+
   markLabel: HTMLSpanElement;
+
   mergeCheckbox: HTMLInputElement;
+
   mergeLabel: HTMLLabelElement;
+
   dropdownButton: HTMLButtonElement;
+
   dropdownMenu: HTMLElement;
+
   dropdownWrapper: HTMLElement;
+
+  mergeUpBtn: HTMLButtonElement;
+
+  mergeDownBtn: HTMLButtonElement;
+
   dropdownOpen: boolean;
+
   editor: any; // ProofingEditor instance
+
+  private createLabeledInput(attrName: string, labelText: string, placeholder: string, width: string, extraClass: string = ''): { label: HTMLSpanElement; input: HTMLInputElement } {
+    const label = document.createElement('span');
+    label.className = 'text-slate-400 text-[11px] ml-1';
+    label.textContent = labelText;
+    this.controlsDOM.appendChild(label);
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = this.node.attrs[attrName] || '';
+    input.placeholder = placeholder;
+    input.className = `border border-slate-300 bg-transparent text-xs text-slate-600 ${width} px-1 py-0 hover:bg-slate-100 rounded ${extraClass}`;
+    input.addEventListener('change', () => this.updateNodeAttr(attrName, input.value || null));
+    this.controlsDOM.appendChild(input);
+
+    return { label, input };
+  }
+
+  private createDropdownButton(icon: string, label: string, handler: () => void, className: string = ''): HTMLButtonElement {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `w-full text-left px-3 py-2 text-xs hover:bg-slate-100 flex items-center gap-2 ${className}`;
+    btn.innerHTML = `<span>${icon}</span> ${label}`;
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      handler();
+      this.closeDropdown();
+    });
+    this.dropdownMenu.appendChild(btn);
+    return btn;
+  }
 
   constructor(node: PMNode, view: EditorView, getPos: () => number | undefined, editor: any) {
     this.node = node;
@@ -262,22 +312,14 @@ class BlockView {
     this.editor = editor;
     this.dropdownOpen = false;
 
-    // Register this BlockView with the editor
     if (editor.blockViews) {
       editor.blockViews.add(this);
     }
 
-    // Ensure type is valid (default to 'p' if not set)
-    const blockType = node.attrs.type || 'p';
-
-    // Create wrapper
     this.dom = document.createElement('div');
-    this.dom.className = `border-l-4 pl-4 mb-3 transition-colors ${BLOCK_TYPE_COLORS[blockType] || 'border-gray-400'}`;
-    if (node.attrs.merge_next) {
-      this.dom.classList.add('bg-yellow-50', '!border-dashed');
-    }
+    this.setBlockDOMClasses();
 
-    // Create controls area
+    // Controls bar
     this.controlsDOM = document.createElement('div');
     this.controlsDOM.className = 'flex gap-1 mb-1 px-1.5 py-1 text-xs text-slate-500 items-center bg-slate-50 rounded leading-tight';
 
@@ -285,63 +327,31 @@ class BlockView {
     this.typeSelect = document.createElement('select');
     this.typeSelect.className = 'border border-slate-300 bg-white text-xs font-medium cursor-pointer hover:bg-slate-100 rounded px-1 py-0';
     const currentType = node.attrs.type || 'p';
-    BLOCK_TYPES.forEach(bt => {
+    BLOCK_TYPES.forEach((bt) => {
       const option = document.createElement('option');
       option.value = bt.tag;
       option.textContent = bt.label;
-      if (bt.tag === currentType) {
-        option.selected = true;
-      }
+      if (bt.tag === currentType) option.selected = true;
       this.typeSelect.appendChild(option);
     });
     this.typeSelect.addEventListener('change', () => this.updateNodeAttr('type', this.typeSelect.value));
     this.controlsDOM.appendChild(this.typeSelect);
 
-    // Text field
-    this.textLabel = document.createElement('span');
-    this.textLabel.className = 'text-slate-400 text-[11px] ml-1';
-    this.textLabel.textContent = 'text=';
+    // Attribute inputs
+    const text = this.createLabeledInput('text', 'text=', 'text', 'w-20');
+    this.textLabel = text.label;
+    this.textInput = text.input;
     this.textLabel.style.display = this.editor.showAdvancedOptions ? '' : 'none';
-    this.controlsDOM.appendChild(this.textLabel);
-
-    this.textInput = document.createElement('input');
-    this.textInput.type = 'text';
-    this.textInput.value = node.attrs.text || '';
-    this.textInput.placeholder = 'text';
-    this.textInput.className = 'border border-slate-300 bg-transparent text-xs text-slate-600 w-20 px-1 py-0 hover:bg-slate-100 rounded';
     this.textInput.style.display = this.editor.showAdvancedOptions ? '' : 'none';
-    this.textInput.addEventListener('change', () => this.updateNodeAttr('text', this.textInput.value || null));
-    this.controlsDOM.appendChild(this.textInput);
 
-    // N field (shown for non-footnote blocks)
-    this.nLabel = document.createElement('span');
-    this.nLabel.className = 'text-slate-400 text-[11px] ml-1';
-    this.nLabel.textContent = 'n=';
-    this.controlsDOM.appendChild(this.nLabel);
+    const n = this.createLabeledInput('n', 'n=', '#', 'w-12', 'font-mono');
+    this.nLabel = n.label;
+    this.nInput = n.input;
 
-    this.nInput = document.createElement('input');
-    this.nInput.type = 'text';
-    this.nInput.value = node.attrs.n || '';
-    this.nInput.placeholder = '#';
-    this.nInput.className = 'border border-slate-300 bg-transparent font-mono text-xs text-slate-600 w-12 px-1 py-0 hover:bg-slate-100 rounded';
-    this.nInput.addEventListener('change', () => this.updateNodeAttr('n', this.nInput.value || null));
-    this.controlsDOM.appendChild(this.nInput);
+    const mark = this.createLabeledInput('mark', 'mark=', 'mark', 'w-16', 'font-mono');
+    this.markLabel = mark.label;
+    this.markInput = mark.input;
 
-    // Mark field (shown for footnote blocks)
-    this.markLabel = document.createElement('span');
-    this.markLabel.className = 'text-slate-400 text-[11px] ml-1';
-    this.markLabel.textContent = 'mark=';
-    this.controlsDOM.appendChild(this.markLabel);
-
-    this.markInput = document.createElement('input');
-    this.markInput.type = 'text';
-    this.markInput.value = node.attrs.mark || '';
-    this.markInput.placeholder = 'mark';
-    this.markInput.className = 'border border-slate-300 bg-transparent font-mono text-xs text-slate-600 w-16 px-1 py-0 hover:bg-slate-100 rounded';
-    this.markInput.addEventListener('change', () => this.updateNodeAttr('mark', this.markInput.value || null));
-    this.controlsDOM.appendChild(this.markInput);
-
-    // Set initial visibility based on block type
     this.updateFieldVisibility();
 
     // Merge checkbox
@@ -363,11 +373,10 @@ class BlockView {
     this.mergeLabel.appendChild(mergeText);
     this.controlsDOM.appendChild(this.mergeLabel);
 
-    // Add dropdown menu wrapper with relative positioning
+    // Dropdown
     this.dropdownWrapper = document.createElement('div');
     this.dropdownWrapper.className = 'ml-auto relative';
 
-    // Dropdown button
     this.dropdownButton = document.createElement('button');
     this.dropdownButton.type = 'button';
     this.dropdownButton.className = 'text-[11px] px-2 py-0.5 bg-slate-100 hover:bg-slate-200 rounded border border-slate-300';
@@ -379,87 +388,20 @@ class BlockView {
     });
     this.dropdownWrapper.appendChild(this.dropdownButton);
 
-    // Dropdown menu
     this.dropdownMenu = document.createElement('div');
     this.dropdownMenu.className = 'absolute right-0 mt-1 bg-white border border-slate-300 rounded shadow-lg z-10 min-w-[140px]';
     this.dropdownMenu.style.display = 'none';
 
-    // Add below button
-    const addBelowBtn = document.createElement('button');
-    addBelowBtn.type = 'button';
-    addBelowBtn.className = 'w-full text-left px-3 py-2 text-xs hover:bg-slate-100 flex items-center gap-2';
-    addBelowBtn.innerHTML = '<span class="text-green-600">+</span> Add below';
-    addBelowBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      this.addBlockBelow();
-      this.closeDropdown();
-    });
-    this.dropdownMenu.appendChild(addBelowBtn);
-
-    // Move up button
-    const moveUpBtn = document.createElement('button');
-    moveUpBtn.type = 'button';
-    moveUpBtn.className = 'w-full text-left px-3 py-2 text-xs hover:bg-slate-100 flex items-center gap-2 border-t border-slate-200';
-    moveUpBtn.innerHTML = '<span>↑</span> Move up';
-    moveUpBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      this.moveBlockUp();
-      this.closeDropdown();
-    });
-    this.dropdownMenu.appendChild(moveUpBtn);
-
-    // Move down button
-    const moveDownBtn = document.createElement('button');
-    moveDownBtn.type = 'button';
-    moveDownBtn.className = 'w-full text-left px-3 py-2 text-xs hover:bg-slate-100 flex items-center gap-2';
-    moveDownBtn.innerHTML = '<span>↓</span> Move down';
-    moveDownBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      this.moveBlockDown();
-      this.closeDropdown();
-    });
-    this.dropdownMenu.appendChild(moveDownBtn);
-
-    // Merge up button
-    this.mergeUpBtn = document.createElement('button');
-    this.mergeUpBtn.type = 'button';
-    this.mergeUpBtn.className = 'w-full text-left px-3 py-2 text-xs hover:bg-slate-100 flex items-center gap-2 border-t border-slate-200';
-    this.mergeUpBtn.innerHTML = '<span>⤒</span> Merge up';
-    this.mergeUpBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      this.mergeBlockUp();
-      this.closeDropdown();
-    });
-    this.dropdownMenu.appendChild(this.mergeUpBtn);
-
-    // Merge down button
-    this.mergeDownBtn = document.createElement('button');
-    this.mergeDownBtn.type = 'button';
-    this.mergeDownBtn.className = 'w-full text-left px-3 py-2 text-xs hover:bg-slate-100 flex items-center gap-2';
-    this.mergeDownBtn.innerHTML = '<span>⤓</span> Merge down';
-    this.mergeDownBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      this.mergeBlockDown();
-      this.closeDropdown();
-    });
-    this.dropdownMenu.appendChild(this.mergeDownBtn);
-
-    // Remove button
-    const removeBtn = document.createElement('button');
-    removeBtn.type = 'button';
-    removeBtn.className = 'w-full text-left px-3 py-2 text-xs hover:bg-red-50 text-red-700 flex items-center gap-2 border-t border-slate-200';
-    removeBtn.innerHTML = '<span>×</span> Remove';
-    removeBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      this.removeBlock();
-      this.closeDropdown();
-    });
-    this.dropdownMenu.appendChild(removeBtn);
+    this.createDropdownButton('<span class="text-green-600">+</span>', 'Add below', () => this.addBlockBelow());
+    this.createDropdownButton('↑', 'Move up', () => this.moveBlockUp(), 'border-t border-slate-200');
+    this.createDropdownButton('↓', 'Move down', () => this.moveBlockDown());
+    this.mergeUpBtn = this.createDropdownButton('⤒', 'Merge up', () => this.mergeBlockUp(), 'border-t border-slate-200');
+    this.mergeDownBtn = this.createDropdownButton('⤓', 'Merge down', () => this.mergeBlockDown());
+    this.createDropdownButton('×', 'Remove', () => this.removeBlock(), 'border-t border-slate-200 hover:!bg-red-50 text-red-700');
 
     this.dropdownWrapper.appendChild(this.dropdownMenu);
     this.controlsDOM.appendChild(this.dropdownWrapper);
 
-    // Add click outside listener to close dropdown
     document.addEventListener('click', (e) => {
       if (this.dropdownOpen && !this.dropdownWrapper.contains(e.target as Node)) {
         this.closeDropdown();
@@ -468,12 +410,20 @@ class BlockView {
 
     this.dom.appendChild(this.controlsDOM);
 
-    // Create content area
+    // Content area
     this.contentDOM = document.createElement('div');
     this.updateContentDOMClasses();
     this.contentDOM.style.fontSize = `${this.editor.textZoom}rem`;
     this.contentDOM.contentEditable = 'true';
     this.dom.appendChild(this.contentDOM);
+  }
+
+  setBlockDOMClasses() {
+    const blockType = this.node.attrs.type || 'p';
+    this.dom.className = `border-l-4 pl-4 mb-3 transition-colors ${BLOCK_TYPE_COLORS[blockType] || 'border-gray-400'}`;
+    if (this.node.attrs.merge_next) {
+      this.dom.classList.add('bg-yellow-50', '!border-dashed');
+    }
   }
 
   updateFieldVisibility() {
@@ -512,22 +462,11 @@ class BlockView {
     });
     this.view.dispatch(tr);
 
-    // Update visual classes if type changed
-    if (name === 'type') {
-      this.dom.className = `border-l-4 pl-4 mb-3 transition-colors ${BLOCK_TYPE_COLORS[value] || 'border-gray-400'}`;
-      if (this.node.attrs.merge_next) {
-        this.dom.classList.add('bg-yellow-50', '!border-dashed');
-      }
-      this.updateContentDOMClasses();
-      this.updateFieldVisibility();
-    }
-
-    // Update visual classes if merge_next changed
-    if (name === 'merge_next') {
-      if (value) {
-        this.dom.classList.add('bg-yellow-50', '!border-dashed');
-      } else {
-        this.dom.classList.remove('bg-yellow-50', '!border-dashed');
+    if (name === 'type' || name === 'merge_next') {
+      this.setBlockDOMClasses();
+      if (name === 'type') {
+        this.updateContentDOMClasses();
+        this.updateFieldVisibility();
       }
     }
   }
@@ -537,16 +476,10 @@ class BlockView {
 
     this.node = node;
 
-    // Update DOM classes to match node type
-    const blockType = node.attrs.type || 'p';
-    this.dom.className = `border-l-4 pl-4 mb-3 transition-colors ${BLOCK_TYPE_COLORS[blockType] || 'border-gray-400'}`;
-    if (node.attrs.merge_next) {
-      this.dom.classList.add('bg-yellow-50', '!border-dashed');
-    }
-
+    this.setBlockDOMClasses();
     this.updateContentDOMClasses();
 
-    // Update controls to match new node attrs
+    const blockType = node.attrs.type || 'p';
     if (this.typeSelect.value !== blockType) {
       this.typeSelect.value = blockType;
     }
@@ -735,7 +668,7 @@ function parseInlineContent(elem: Element, schema: Schema): PMNode[] {
   function serializeNode(node: Node): string {
     if (node.nodeType === Node.TEXT_NODE) {
       return node.textContent || '';
-    } else if (node.nodeType === Node.ELEMENT_NODE) {
+    } if (node.nodeType === Node.ELEMENT_NODE) {
       const el = node as Element;
       const tagName = el.tagName.toLowerCase();
       const children = Array.from(node.childNodes).map(serializeNode).join('');
@@ -793,7 +726,7 @@ function serializeDocToXML(doc: PMNode): string {
     if (block.attrs.lang) attrs.push(`lang="${escapeXML(block.attrs.lang)}"`);
     if (block.attrs.merge_next) attrs.push('merge-next="true"');
 
-    const attrsStr = attrs.length > 0 ? ' ' + attrs.join(' ') : '';
+    const attrsStr = attrs.length > 0 ? ` ${attrs.join(' ')}` : '';
     const content = serializeInlineContent(block);
 
     parts.push(`<${type}${attrsStr}>${content}</${type}>`);
@@ -808,7 +741,7 @@ function serializeInlineContent(node: PMNode): string {
   node.forEach((child, _, index) => {
     if (child.isText) {
       let text = escapeXML(child.text || '');
-      child.marks.forEach(mark => {
+      child.marks.forEach((mark) => {
         text = `<${mark.type.name}>${text}</${mark.type.name}>`;
       });
 
@@ -888,7 +821,7 @@ function createXMLDecorations(state: EditorState): DecorationSet {
     decorations.push(
       Decoration.inline(from, to, {
         style: 'color: #60a5fa;', // Blue color for tags
-      })
+      }),
     );
   }
 
@@ -897,7 +830,9 @@ function createXMLDecorations(state: EditorState): DecorationSet {
 
 export class XMLView {
   view: EditorView;
+
   schema: Schema;
+
   onChange?: () => void;
 
   constructor(element: HTMLElement, initialContent: string = '', onChange?: () => void) {
@@ -964,7 +899,7 @@ export class XMLView {
   }
 
   replaceSelection(text: string) {
-    const state = this.view.state;
+    const { state } = this.view;
     const { from, to } = state.selection;
 
     const tr = state.tr.insertText(text, from, to);
@@ -992,11 +927,17 @@ export class XMLView {
 
 export default class {
   view: EditorView;
+
   schema: Schema;
+
   onChange?: () => void;
+
   onActiveWordChange?: (context: { word: string; lineText: string; wordIndex: number } | null) => void;
+
   showAdvancedOptions: boolean;
+
   blockViews: Set<BlockView>;
+
   textZoom: number;
 
   constructor(element: HTMLElement, initialContent: string = '', onChange?: () => void, showAdvancedOptions: boolean = false, textZoom: number = 1.0, onActiveWordChange?: (context: { word: string; lineText: string; wordIndex: number } | null) => void) {
@@ -1010,7 +951,7 @@ export default class {
     let doc;
     try {
       doc = parseXMLToDoc(initialContent, this.schema);
-    } catch  (error) {
+    } catch (error) {
       doc = this.schema.node('doc', null, [this.schema.node('block', { type: 'p' })]);
     }
 
@@ -1064,7 +1005,7 @@ export default class {
   }
 
   replaceSelection(text: string) {
-    const state = this.view.state;
+    const { state } = this.view;
     const { from, to } = state.selection;
 
     const tr = state.tr.insertText(text, from, to);
@@ -1078,7 +1019,7 @@ export default class {
   }
 
   toggleMark(markType: MarkName) {
-    console.log("togglemark", markType);
+    console.log('togglemark', markType);
     const { state, dispatch } = this.view;
     const { from, to } = state.selection;
 
@@ -1154,58 +1095,33 @@ export default class {
   }
 
   moveBlockUp(blockIndex?: number) {
-    const { state, dispatch } = this.view;
     if (blockIndex === undefined) blockIndex = this._getBlockIndexFromSelection();
     if (blockIndex <= 0) return;
-
-    const currentBlock = state.doc.child(blockIndex);
-    const prevBlock = state.doc.child(blockIndex - 1);
-    const prevBlockStart = this._getBlockStartPos(blockIndex - 1);
-
-    const newChildren: PMNode[] = [];
-    for (let i = 0; i < state.doc.childCount; i++) {
-      if (i === blockIndex - 1) {
-        newChildren.push(currentBlock);
-      } else if (i === blockIndex) {
-        newChildren.push(prevBlock);
-      } else {
-        newChildren.push(state.doc.child(i));
-      }
-    }
-
-    const newDoc = state.schema.node('doc', null, newChildren);
-    let tr = state.tr.replaceWith(0, state.doc.content.size, newDoc);
-    tr = tr.setSelection(Selection.near(tr.doc.resolve(prevBlockStart + 1)));
-    dispatch(tr);
-
-    if (this.onChange) {
-      this.onChange();
-    }
+    this._swapBlocks(blockIndex - 1, blockIndex);
   }
 
   moveBlockDown(blockIndex?: number) {
-    const { state, dispatch } = this.view;
     if (blockIndex === undefined) blockIndex = this._getBlockIndexFromSelection();
-    if (blockIndex < 0 || blockIndex >= state.doc.childCount - 1) return;
+    if (blockIndex < 0 || blockIndex >= this.view.state.doc.childCount - 1) return;
+    this._swapBlocks(blockIndex, blockIndex + 1);
+  }
 
-    const currentBlock = state.doc.child(blockIndex);
-    const nextBlock = state.doc.child(blockIndex + 1);
-    const newBlockStart = this._getBlockStartPos(blockIndex) + nextBlock.nodeSize;
+  private _swapBlocks(indexA: number, indexB: number) {
+    const { state, dispatch } = this.view;
+    const blockA = state.doc.child(indexA);
+    const blockB = state.doc.child(indexB);
 
     const newChildren: PMNode[] = [];
     for (let i = 0; i < state.doc.childCount; i++) {
-      if (i === blockIndex) {
-        newChildren.push(nextBlock);
-      } else if (i === blockIndex + 1) {
-        newChildren.push(currentBlock);
-      } else {
-        newChildren.push(state.doc.child(i));
-      }
+      if (i === indexA) newChildren.push(blockB);
+      else if (i === indexB) newChildren.push(blockA);
+      else newChildren.push(state.doc.child(i));
     }
 
     const newDoc = state.schema.node('doc', null, newChildren);
     let tr = state.tr.replaceWith(0, state.doc.content.size, newDoc);
-    tr = tr.setSelection(Selection.near(tr.doc.resolve(newBlockStart + 1)));
+    // Place cursor in whichever block ended up at indexA (the earlier position)
+    tr = tr.setSelection(Selection.near(tr.doc.resolve(this._getBlockStartPos(indexA) + 1)));
     dispatch(tr);
 
     if (this.onChange) {
@@ -1279,7 +1195,7 @@ export default class {
   setShowAdvancedOptions(show: boolean) {
     this.showAdvancedOptions = show;
 
-    this.blockViews.forEach(blockView => {
+    this.blockViews.forEach((blockView) => {
       blockView.updateAdvancedOptionsVisibility();
     });
   }
@@ -1287,7 +1203,7 @@ export default class {
   setTextZoom(zoom: number) {
     this.textZoom = zoom;
 
-    this.blockViews.forEach(blockView => {
+    this.blockViews.forEach((blockView) => {
       blockView.contentDOM.style.fontSize = `${zoom}rem`;
     });
   }

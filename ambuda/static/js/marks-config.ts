@@ -33,7 +33,7 @@ export const INLINE_MARKS: InlineMarkConfig[] = [
     emoji: 'ref: ',
     label: 'Footnote number',
     className: 'pm-ref',
-    excludes: "_",
+    excludes: '_',
   },
   {
     name: 'stage',
@@ -87,5 +87,5 @@ export const INLINE_MARKS: InlineMarkConfig[] = [
 export type MarkName = typeof INLINE_MARKS[number]['name'];
 
 export function getAllMarkNames(): string[] {
-  return INLINE_MARKS.map(m => m.name);
+  return INLINE_MARKS.map((m) => m.name);
 }

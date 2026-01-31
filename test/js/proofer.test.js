@@ -4,253 +4,255 @@ import Proofer from '@/proofer';
 const sampleHTML = `
 <div>
   <textarea id="content"></textarea>
+  <div id="prosemirror-editor"></div>
 </div>
 `;
 
 // Can't modify existing `window.location` -- delete it so that we can mock it.
-// (See beforeEach and the tests below.)
 delete window.location;
 window.IMAGE_URL = 'IMAGE_URL';
+window.OCR_BOUNDING_BOXES = '';
 window.OpenSeadragon = (_) => ({
   addHandler: jest.fn((_, callback) => callback()),
+  world: { getItemAt: jest.fn(() => null) },
   viewport: {
     getHomeZoom: jest.fn(() => 0.5),
-    zoomTo: jest.fn((_) => {}),
-  }
+    zoomTo: jest.fn(),
+    getZoom: jest.fn(() => 0.5),
+    fitHorizontally: jest.fn(),
+    fitVertically: jest.fn(),
+  },
 });
+
+const mockEditor = {
+  setText: jest.fn(),
+  getText: jest.fn(() => ''),
+  setTextZoom: jest.fn(),
+  getSelection: jest.fn(() => ({ from: 0, to: 0, text: '' })),
+  replaceSelection: jest.fn(),
+  destroy: jest.fn(),
+  focus: jest.fn(),
+  setShowAdvancedOptions: jest.fn(),
+  insertBlock: jest.fn(),
+  deleteActiveBlock: jest.fn(),
+  moveBlockUp: jest.fn(),
+  moveBlockDown: jest.fn(),
+  mergeBlockUp: jest.fn(),
+  mergeBlockDown: jest.fn(),
+  undo: jest.fn(),
+  redo: jest.fn(),
+  toggleMark: jest.fn(),
+};
+
+window.Alpine = { raw: jest.fn(() => mockEditor) };
 window.Sanscript = {
-  // Preface `s` with a marker so that we can verify that we're using the right
-  // selection range.
   t: jest.fn((s, from, to) => `:${s}:${to}`),
-}
+};
 window.fetch = jest.fn(async (url) => {
-  // Special URL so we can test server errors.
-  if (url === '/api/ocr/error') {
-    return { ok: false }
-  } else {
-    const segments = url.split('/');
-    const page = segments.pop();
-    return {
-      ok: true,
-      text: async () => `text for ${page}`,
-    }
+  if (url.includes('error')) {
+    return { ok: false };
   }
+  const segments = url.split('/');
+  const page = segments.pop();
+  return {
+    ok: true,
+    text: async () => `text for ${page}`,
+  };
 });
 navigator.clipboard = {
-  writeText: jest.fn((s) => {}),
-}
+  writeText: jest.fn(),
+};
 
 beforeEach(() => {
   window.location = null;
   window.localStorage.clear();
   document.write(sampleHTML);
+  jest.clearAllMocks();
 });
 
-test('Proofer can be created', () => {
-  const p = Proofer()
-  p.init();
+// -- Init & settings --
 
+test('Proofer can be created and initialized', () => {
+  const p = Proofer();
+  p.init();
   expect(p.textZoom).toBe(1);
   expect(p.imageZoom).toBe(0.5);
 });
 
-test('saveSettings and loadSettings work as expected', () => {
-  const oldProofer = Proofer()
-  oldProofer.textZoom = "test text zoom";
-  oldProofer.imageZoom = "test image zoom";
-  oldProofer.layout = "side-by-side";
-  oldProofer.fromScript = "test from script";
-  oldProofer.toScript = "test to script";
-  oldProofer.saveSettings();
+test('saveSettings and loadSettings round-trip', () => {
+  const p = Proofer();
+  p.textZoom = 1.5;
+  p.imageZoom = 2.0;
+  p.layout = 'image-left';
+  p.fromScript = 'iast';
+  p.toScript = 'devanagari';
+  p.trackBoundingBox = true;
+  p.normalizeReplaceColonVisarga = false;
+  p.saveSettings();
 
-  const p = Proofer()
-  p.loadSettings();
-  expect(p.textZoom).toBe("test text zoom");
-  expect(p.imageZoom).toBe("test image zoom");
-  expect(p.layout).toBe("side-by-side");
-  expect(p.fromScript).toBe("test from script");
-  expect(p.toScript).toBe("test to script");
+  const p2 = Proofer();
+  p2.loadSettings();
+  expect(p2.textZoom).toBe(1.5);
+  expect(p2.imageZoom).toBe(2.0);
+  expect(p2.layout).toBe('image-left');
+  expect(p2.fromScript).toBe('iast');
+  expect(p2.toScript).toBe('devanagari');
+  expect(p2.trackBoundingBox).toBe(true);
+  expect(p2.normalizeReplaceColonVisarga).toBe(false);
 });
 
-test('loadSettings works if localStorage data is empty', () => {
-  localStorage.setItem('proofing-editor', "{}");
+test('loadSettings with empty localStorage uses defaults', () => {
+  localStorage.setItem('proofing-editor', '{}');
   const p = Proofer();
   p.loadSettings();
   expect(p.textZoom).toBe(1);
-  expect(p.layout).toBe('side-by-side');
+  expect(p.layout).toBe('image-right');
 });
 
-test('loadSettings works if localStorage data is corrupt', () => {
-  localStorage.setItem('proofing-editor', "invalid JSON");
+test('loadSettings with corrupt localStorage does not throw', () => {
+  localStorage.setItem('proofing-editor', 'invalid JSON');
   const p = Proofer();
   p.loadSettings();
-  // No error -- OK
 });
 
-test('onBeforeUnload shows text if changes are present.', () => {
+test('normalize preferences default to true', () => {
+  localStorage.setItem('proofing-editor', '{}');
+  const p = Proofer();
+  p.loadSettings();
+  expect(p.normalizeReplaceColonVisarga).toBe(true);
+  expect(p.normalizeReplaceSAvagraha).toBe(true);
+  expect(p.normalizeReplaceDoublePipe).toBe(true);
+});
+
+// -- Callbacks --
+
+test('onBeforeUnload returns true when changes are present', () => {
   const p = Proofer();
   p.hasUnsavedChanges = true;
   expect(p.onBeforeUnload()).toBe(true);
 });
 
-test('onBeforeUnload shows no text if no changes have been made.', () => {
+test('onBeforeUnload returns null when no changes', () => {
   const p = Proofer();
   expect(p.onBeforeUnload()).toBe(null);
 });
 
-test('runOCR handles a valid server response', async () => {
+// -- Fetch & OCR --
+
+test('runOCR fetches and sets content', async () => {
   const p = Proofer();
-  window.location = new URL("https://ambuda.org/proofing/my-project/my-page");
+  p.init();
+  window.location = new URL('https://ambuda.org/proofing/my-project/my-page');
   await p.runOCR();
-  expect($("#content").value).toBe('text for my-page');
+  expect(mockEditor.setText).toHaveBeenCalledWith('text for my-page');
+  expect($('#content').value).toBe('text for my-page');
 });
 
-test('runOCR handles an invalid server response', async () => {
+test('runOCR handles server error', async () => {
   const p = Proofer();
-  window.location = new URL("https://ambuda.org/proofing/error");
+  p.init();
+  window.location = new URL('https://ambuda.org/proofing/error');
   await p.runOCR();
-  expect($("#content").value).toBe('(server error)');
+  expect(mockEditor.setText).toHaveBeenCalledWith('(server error)');
 });
 
-test('increaseImageZoom works and gets saved', () => {
-  const p = Proofer()
+// -- Image zoom --
+
+test('increaseImageZoom multiplies by 1.2', () => {
+  const p = Proofer();
   p.init();
   expect(p.imageZoom).toBe(0.5);
-
   p.increaseImageZoom();
-  expect(p.imageZoom).toBe(0.6);
-
-  const p2 = Proofer();
-  p2.init();
-  expect(p2.imageZoom).toBe(0.6);
+  expect(p.imageZoom).toBeCloseTo(0.6);
 });
 
-test('decreaseImageZoom works and gets saved', () => {
-  const p = Proofer()
+test('decreaseImageZoom multiplies by 0.8', () => {
+  const p = Proofer();
   p.init();
-  expect(p.imageZoom).toBe(0.5);
-
   p.decreaseImageZoom();
-  expect(p.imageZoom).toBe(0.4);
-
-  const p2 = Proofer();
-  p2.init();
-  expect(p2.imageZoom).toBe(0.4);
+  expect(p.imageZoom).toBeCloseTo(0.4);
 });
 
-test('resetImageZoom works and gets saved', () => {
-  const p = Proofer()
+test('resetImageZoom restores home zoom', () => {
+  const p = Proofer();
   p.init();
   p.imageZoom = 3;
-
   p.resetImageZoom();
   expect(p.imageZoom).toBe(0.5);
 });
 
-test('increaseTextSize works and gets saved', () => {
-  const p = Proofer()
+// -- Text zoom --
+
+test('increaseTextSize adds 0.1', () => {
+  const p = Proofer();
   p.init();
-  expect(p.textZoom).toBe(1);
-
   p.increaseTextSize();
-  expect(p.textZoom).toBe(1.2);
-
-  const p2 = Proofer();
-  expect(p2.textZoom).toBe(1);
-  p2.loadSettings();
-  expect(p2.textZoom).toBe(1.2);
+  expect(p.textZoom).toBeCloseTo(1.1);
+  expect(mockEditor.setTextZoom).toHaveBeenCalledWith(expect.closeTo(1.1));
 });
 
-test('decreaseTextSize works and gets saved', () => {
-  const p = Proofer()
-  expect(p.textZoom).toBe(1);
-
+test('decreaseTextSize subtracts 0.1 with min 0.5', () => {
+  const p = Proofer();
+  p.init();
   p.decreaseTextSize();
-  expect(p.textZoom).toBe(0.8);
+  expect(p.textZoom).toBeCloseTo(0.9);
+
+  // Verify floor
+  p.textZoom = 0.5;
+  p.decreaseTextSize();
+  expect(p.textZoom).toBe(0.5);
+});
+
+test('resetTextSize resets to 1', () => {
+  const p = Proofer();
+  p.init();
+  p.textZoom = 2;
+  p.resetTextSize();
+  expect(p.textZoom).toBe(1);
+});
+
+// -- Layout --
+
+test('setLayout changes layout and saves', () => {
+  const p = Proofer();
+  p.init();
+  p.displayImageOnLeft();
+  expect(p.layout).toBe('image-left');
 
   const p2 = Proofer();
-  expect(p2.textZoom).toBe(1);
   p2.loadSettings();
-  expect(p2.textZoom).toBe(0.8);
+  expect(p2.layout).toBe('image-left');
 });
 
-test('displaySideBySide works and gets saved', () => {
-  const p = Proofer()
-  p.layout = 'foo';
-
-  p.displaySideBySide();
-  expect(p.layout).toBe('side-by-side');
-
-  const p2 = Proofer();
-  p2.loadSettings();
-  expect(p2.layout).toBe('side-by-side');
-});
-
-test('displayTopAndBottom works and gets saved', () => {
-  const p = Proofer()
-  p.displayTopAndBottom();
-
-  const p2 = Proofer();
-  expect(p2.layout).toBe('side-by-side');
-  p2.loadSettings();
-  expect(p2.layout).toBe('top-and-bottom');
-});
-
-test('transliterate works and saves settings', () => {
+test('getLayoutClasses returns correct classes', () => {
   const p = Proofer();
-  const $text = $('#content');
-  $text.value = 'Sanskrit (saMskRtam) text'
-  $text.setSelectionRange(10, 19);
-
-  p.fromScript = 'hk'
-  p.toScript = 'iast';
-  p.transliterate()
-
-  expect($text.value).toBe('Sanskrit (:saMskRtam:iast) text')
+  p.layout = 'image-left';
+  expect(p.getLayoutClasses()).toBe('flex flex-row-reverse h-[90vh]');
+  p.layout = 'image-right';
+  expect(p.getLayoutClasses()).toBe('flex flex-row h-[90vh]');
+  p.layout = 'image-top';
+  expect(p.getLayoutClasses()).toBe('flex flex-col-reverse h-[90vh]');
+  p.layout = 'image-bottom';
+  expect(p.getLayoutClasses()).toBe('flex flex-col h-[90vh]');
+  p.layout = 'unknown';
+  expect(p.getLayoutClasses()).toBe('flex flex-row h-[90vh]');
 });
 
-function markupFixtures(text) {
+// -- Revision colors --
+
+test('getRevisionColorClass returns correct classes', () => {
   const p = Proofer();
-  const $text = $('#content');
-  $text.value = 'This is sample text.'
-  $text.setSelectionRange(8, 14);
-  return { p, $text };
-}
-
-test('markAsError works', () => {
-  const { p, $text } = markupFixtures();
-  p.markAsError()
-  expect($text.value).toBe('This is <error>sample</error> text.')
+  expect(p.getRevisionColorClass('reviewed-0')).toBe('bg-red-200 text-red-800');
+  expect(p.getRevisionColorClass('reviewed-1')).toBe('bg-yellow-200 text-yellow-800');
+  expect(p.getRevisionColorClass('reviewed-2')).toBe('bg-green-200 text-green-800');
+  expect(p.getRevisionColorClass('skip')).toBe('bg-gray-200 text-gray-800');
+  expect(p.getRevisionColorClass('unknown')).toBe('');
 });
 
-test('markAsFix works', () => {
-  const { p, $text } = markupFixtures();
-  p.markAsFix()
-  expect($text.value).toBe('This is <fix>sample</fix> text.')
-});
+// -- Misc --
 
-test('markAsUnclear works', () => {
-  const { p, $text } = markupFixtures();
-  p.markAsUnclear()
-  expect($text.value).toBe('This is <flag>sample</flag> text.')
-});
-
-test('markAsFootnoteNumber works', () => {
-  const { p, $text } = markupFixtures();
-  p.markAsFootnoteNumber()
-  expect($text.value).toBe('This is [^sample] text.')
-});
-
-test('replaceColonVisarga works', () => {
+test('copyCharacter writes to clipboard', () => {
   const p = Proofer();
-  const $text = $('#content');
-  $text.value = 'क: खा: गि : घी:'
-  $text.setSelectionRange(3, 12);
-  p.replaceColonVisarga();
-  expect($text.value).toBe('क: खाः गि ः घी:');
-});
-
-test('copyCharacter works', () => {
-  const { p } = markupFixtures();
-  p.copyCharacter({ target: { textContent: 'foo' }});
+  p.copyCharacter({ target: { textContent: 'ऽ' } });
+  expect(navigator.clipboard.writeText).toHaveBeenCalledWith('ऽ');
 });
