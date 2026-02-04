@@ -105,7 +105,7 @@ describe('ProseMirrorEditor', () => {
     editor.view.dom.dispatchEvent(shiftEnterEvent);
 
     const output = editor.getText();
-    expect(output).toContain('<p>Content here</p>');
+    expect(output).toBe('<page>\n<p>Content</p>\n<p> here</p>\n</page>');
     expect(editor.view.state.doc.childCount).toBe(2);
 
     editor.destroy();

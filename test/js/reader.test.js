@@ -72,6 +72,7 @@ beforeEach(() => {
 
 test('Reader can be created', () => {
   const r = Reader()
+  r.$nextTick = (fn) => fn();
   r.init();
 });
 

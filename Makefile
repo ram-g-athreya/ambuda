@@ -95,6 +95,7 @@ ambuda-dev:
 	@echo "🚀 Starting Ambuda development environment in Docker..."
 	@echo "   This will start: web server, Celery workers, and Redis"
 	@mkdir -p data/database data/file-uploads data/vidyut
+	@touch .env.docker.local
 	docker compose -f docker-compose.dev.yml up
 
 # Build the Docker image. You can also run this if you encounter any build issues.

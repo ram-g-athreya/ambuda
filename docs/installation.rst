@@ -1,6 +1,9 @@
 Installation
 ============
 
+.. warning::
+    This document is out of date.
+
 This guide will show you how to install Ambuda and its dependencies. By the end
 of this guide, you'll have a working devserver that contains the same texts and
 data as our production server.

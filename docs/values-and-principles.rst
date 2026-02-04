@@ -1,30 +1,29 @@
 Values and principles
 =====================
 
+Ambuda's mission is to build a comprehensive library of Sanskrit literature and make it
+accessible to all. Our values and principles are designed to help us realize this
+ambitious goal.
+
 
 Values
 ------
 
-Ambuda's mission is to make the Sanskrit tradition radically accessible.
-*Radical access* is Ambuda's core value, and it affects not only the project as
-a whole but also how we design and nurture our code and community.
+As a library project, we value trust, sustainability, and long-term thinking in
+everything we do.
 
-From a community perspective, radical access means that we communicate openly
-and visibly about our project. For us specifically, it means that we send out
-regular project updates on our mailing list, track technical work on GitHub,
-and have more open discussion on Discord. Everyone is welcome to join in on our
-ongoing discussion.
+From a community perspective, we send out regular project updates on our mailing
+list, track technical work on GitHub, and have more open discussion on Discord.
+Everyone is welcome to join in on our ongoing discussion.
 
-From a code perspective, radical access means that we build in public so that
-everyone can see how our project is doing and participate in it themselves. It
-means that we bias toward obvious and boring technology that anyone can read
-and understand. And it means that we take care to write code that is clear and
-simple.
+From a code perspective, we build in public so that everyone can see how our project
+is doing and participate in it themselves. It means that we bias toward obvious and
+boring technology that anyone can read and understand. It also means that we take
+care to write code that is clear and simple.
 
-From a data perspective, radical access means that we rely on open and public
-data and produce open and public data in return. Although licensing rights
-often prevent it, we strive to release our texts under a `CC0`_ (public domain)
-license.
+From a data perspective, we rely on open and public data and produce open and public
+data in return. Although licensing rights often prevent it, we strive to release our
+texts under a `CC0`_ (public domain) license.
 
 
 Principles

@@ -4,7 +4,7 @@
 import { $ } from './core.ts';
 import ProofingEditor, { XMLView } from './prosemirror-editor.ts';
 import { INLINE_MARKS } from './marks-config.ts';
-import routes from './routes.js';
+import routes from './routes';
 
 const CONFIG_KEY = 'proofing-editor';
 
@@ -12,7 +12,7 @@ function fuzzyMatch(query, text) {
   const lowerText = text.toLowerCase();
   const lowerQuery = query.toLowerCase();
   let ti = 0;
-  for (let qi = 0; qi < lowerQuery.length; qi++) {
+  for (let qi = 0; qi < lowerQuery.length; qi += 1) {
     const idx = lowerText.indexOf(lowerQuery[qi], ti);
     if (idx < 0) return false;
     ti = idx + 1;
@@ -82,15 +82,15 @@ function levenshteinDistance(str1, str2) {
 
   const dp = Array(len1 + 1).fill(null).map(() => Array(len2 + 1).fill(0));
 
-  for (let i = 0; i <= len1; i++) {
+  for (let i = 0; i <= len1; i += 1) {
     dp[i][0] = i;
   }
-  for (let j = 0; j <= len2; j++) {
+  for (let j = 0; j <= len2; j += 1) {
     dp[0][j] = j;
   }
 
-  for (let i = 1; i <= len1; i++) {
-    for (let j = 1; j <= len2; j++) {
+  for (let i = 1; i <= len1; i += 1) {
+    for (let j = 1; j <= len2; j += 1) {
       if (str1[i - 1] === str2[j - 1]) {
         dp[i][j] = dp[i - 1][j - 1];
       } else {
@@ -136,7 +136,7 @@ function groupBoundingBoxesByLine(boxes) {
   let currentLineY = sortedBoxes[0].y1;
 
   // Words on the same line should have similar y-coordinates
-  for (let i = 1; i < sortedBoxes.length; i++) {
+  for (let i = 1; i < sortedBoxes.length; i += 1) {
     const box = sortedBoxes[i];
     const yDiff = Math.abs(box.y1 - currentLineY);
 
@@ -398,9 +398,15 @@ export default () => ({
         this.trackBoundingBox = settings.trackBoundingBox || false;
 
         // Normalize preferences (default to true if not set)
-        this.normalizeReplaceColonVisarga = settings.normalizeReplaceColonVisarga !== undefined ? settings.normalizeReplaceColonVisarga : true;
-        this.normalizeReplaceSAvagraha = settings.normalizeReplaceSAvagraha !== undefined ? settings.normalizeReplaceSAvagraha : true;
-        this.normalizeReplaceDoublePipe = settings.normalizeReplaceDoublePipe !== undefined ? settings.normalizeReplaceDoublePipe : true;
+        this.normalizeReplaceColonVisarga = settings.normalizeReplaceColonVisarga !== undefined
+          ? settings.normalizeReplaceColonVisarga
+          : true;
+        this.normalizeReplaceSAvagraha = settings.normalizeReplaceSAvagraha !== undefined
+          ? settings.normalizeReplaceSAvagraha
+          : true;
+        this.normalizeReplaceDoublePipe = settings.normalizeReplaceDoublePipe !== undefined
+          ? settings.normalizeReplaceDoublePipe
+          : true;
       } catch (error) {
         // Old settings are invalid -- rewrite with valid values.
         this.saveSettings();
@@ -796,12 +802,12 @@ export default () => ({
     let changedCount = 0;
     let unchangedCount = 0;
 
-    for (let i = 0; i < maxLines && changedCount < 15; i++) {
+    for (let i = 0; i < maxLines && changedCount < 15; i += 1) {
       const oldLine = originalLines[i] || '';
       const newLine = currentLines[i] || '';
 
       if (oldLine !== newLine) {
-        changedCount++;
+        changedCount += 1;
         unchangedCount = 0;
 
         if (oldLine && newLine) {
@@ -813,7 +819,7 @@ export default () => ({
           diff += `<div class="text-green-700 bg-green-50 px-2 py-1 mb-1">+ ${this.escapeHtml(newLine)}</div>`;
         }
       } else {
-        unchangedCount++;
+        unchangedCount += 1;
         if (unchangedCount <= 2 && changedCount > 0) {
           diff += `<div class="text-slate-500 px-2 py-1 mb-0.5 text-xs">  ${this.escapeHtml(oldLine)}</div>`;
         }
@@ -889,11 +895,13 @@ export default () => ({
 
     let bestLine = null;
     let bestLineSimilarity = LINE_FUZZY_THRESHOLD;
-    for (const boundingLine of this.boundingBoxLines) {
+    this.boundingBoxLines.forEach((boundingLine) => {
+      if (bestLine && bestLineSimilarity === 1) return;
       const normalizedBoundingLine = boundingLine.text.trim();
       if (normalizedBoundingLine === normalizedLine) {
         bestLine = boundingLine;
-        break;
+        bestLineSimilarity = 1;
+        return;
       }
 
       const similarity = similarityRatio(normalizedLine, normalizedBoundingLine);
@@ -901,7 +909,7 @@ export default () => ({
         bestLineSimilarity = similarity;
         bestLine = boundingLine;
       }
-    }
+    });
 
     if (!bestLine) {
       return this.findBestMatchingBoundingBoxFallback(normalizedWord);
@@ -910,7 +918,8 @@ export default () => ({
     let bestWordBox = null;
     let bestWordSimilarity = WORD_FUZZY_THRESHOLD;
 
-    for (const box of bestLine.boxes) {
+    for (let i = 0; i < bestLine.boxes.length; i += 1) {
+      const box = bestLine.boxes[i];
       const boxText = box.text.toLowerCase();
 
       if (boxText === normalizedWord) {
@@ -929,7 +938,8 @@ export default () => ({
 
   // Fallback to old algorithm when line matching fails
   findBestMatchingBoundingBoxFallback(normalizedWord) {
-    for (const box of this.boundingBoxes) {
+    for (let i = 0; i < this.boundingBoxes.length; i += 1) {
+      const box = this.boundingBoxes[i];
       if (box.text.toLowerCase() === normalizedWord) {
         return box;
       }
@@ -939,7 +949,7 @@ export default () => ({
     let bestMatch = null;
     let bestSimilarity = FUZZY_THRESHOLD;
 
-    for (const box of this.boundingBoxes) {
+    this.boundingBoxes.forEach((box) => {
       const boxText = box.text.toLowerCase();
       const similarity = similarityRatio(normalizedWord, boxText);
 
@@ -947,7 +957,7 @@ export default () => ({
         bestSimilarity = similarity;
         bestMatch = box;
       }
-    }
+    });
 
     return bestMatch;
   },
@@ -1004,6 +1014,7 @@ export default () => ({
       try {
         this.imageViewer.removeOverlay(this.currentOverlay);
       } catch (e) {
+        // eslint-disable-next-line no-console
         console.debug('Failed to remove overlay:', e);
       }
       this.currentOverlay = null;

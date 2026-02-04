@@ -87,7 +87,7 @@ class ValidationResult:
 
 
 CORE_INLINE_TYPES = set(InlineType)
-VALIDATION_SPECS = {
+PROOFING_XML_VALIDATION_SPEC = {
     "page": ValidationSpec(children=set(BlockType), attrib=set()),
     BlockType.PARAGRAPH: ValidationSpec(
         children=CORE_INLINE_TYPES,
@@ -222,7 +222,7 @@ def validate_proofing_xml(content: str) -> list[ValidationResult]:
     if root.tag != "page":
         return [ValidationResult.error(f"Root tag must be 'page', got '{root.tag}'")]
 
-    return validate_xml(root, VALIDATION_SPECS)
+    return validate_xml(root, PROOFING_XML_VALIDATION_SPEC)
 
 
 def validate_tei_xml(xml: ET.Element) -> list[ValidationResult]:

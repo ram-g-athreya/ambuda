@@ -6,7 +6,7 @@ import boto3
 
 
 def is_local() -> bool:
-    return os.environ["FLASK_ENV"] != "production"
+    return os.environ.get("FLASK_ENV") != "production"
 
 
 @functools.cache

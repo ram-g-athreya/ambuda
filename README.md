@@ -23,7 +23,7 @@ This quickstart will show you how to:
 - create an admin user
 - upload content to the site
 
-## Starting Ambuda with Docker
+### Starting Ambuda with Docker
 
 The quickest way to run Ambuda on your computer is to use `docker compose` from your command line.
 
@@ -59,13 +59,13 @@ The `make ambuda-dev` command will do the following:
 To quit, press `Ctrl+C` to stop all services.
 
 > [!TIP]
+>
 > If you ever run into build issues with `make ambuda-dev`, first run `make ambuda-dev-build`
 > then try again.
 
 > [!WARNING]
-> When running `make ambuda-dev` if you see an error as follows:\
-> `env file /path/to/ambuda/.env.docker.local not found: stat /path/to/ambuda/.env.docker.local: no such file or directory` \
-> then you can fix it by simply creating an empty file using the command `touch .env.docker.local`
+>
+> Run CLI commansd within `make ambuda-dev-shell`.
 
 ## Creating an admin user
 
@@ -85,26 +85,42 @@ make ambuda-dev-shell
 
 After you've created your admin user, go to `http://localhost:5000/sign-in` to sign in.
 
-## Uploading content to the site
+### Creating test data
+
+(Under revision.)
+
+Use `create-toy-data` to create a toy project.
+
+```
+make ambuda-dev-shell
+
+# Inside the shell
+> uv run cli.py create-toy-data
+```
+
+
+### Uploading content to the site
 
 (Under revision.)
 
 Once you've logged in as an admin user go to `https://localhost:5000/admin/` to open the Admin UI.
 
-## Architecture
-
-(Under revision.)
-
-Essentials:
-
-- Web backend: Flask
-- Task runner: Celery, with a Redis message broker.
-- Frontend: Alpine.js and small amounts of Typescript.
-- Storage: S3
 
 ## Documentation
 
-(Under revision.)
+Our docs contain information about our tech stack, architecture, design decisions, and so on. To
+read them, see the `docs` folder, or build them from scratch and open them in your browser:
+
+```
+$ make docs
+$ open docs/_build/html/index.html
+```
+
+## Troubleshooting
+
+- `table already exists`
+  - Run `make ambuda-dev-shell` then uv run alembic upgrade head`.
+  - If problems persist, delete the local database and try again.
 
 ## Contributing
 

@@ -1,6 +1,9 @@
 Quickstart
 ==========
 
+.. warning::
+    This document is out of date.
+
 All of Ambuda's major commands are in `Makefile`.
 
 

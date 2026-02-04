@@ -85,9 +85,9 @@ def validate_xml_is_well_formed(xml: ET.Element) -> ValidationResult:
         if block_results:
             for x in block_results:
                 ret.add_error(x.message)
-        elif block.tag == 'lg' and len(block) == 0:
-            xml_string = ET.tostring(block, encoding='unicode', method='xml')
-            ret.add_error(f'Element {xml_string} has no content')
+        elif block.tag == "lg" and len(block) == 0:
+            xml_string = ET.tostring(block, encoding="unicode", method="xml")
+            ret.add_error(f"Element {xml_string} has no content")
         else:
             ret.incr_ok()
     return ret
@@ -112,18 +112,19 @@ def validate_all_sanskrit_text_is_well_formed(block: ET.Element) -> ValidationRe
             ret.incr_ok()
     return ret
 
+
 @validation_rule(desc="Validate verse number if it exists")
 def validate_verse_number_if_exists(block: ET.Element) -> ValidationResult:
     ret = ValidationResult()
     # Captures verse numbers of the form ॥१-३॥ ॥१.३॥ ॥१-३-३॥ ॥१॥ etc.
     RE_VERSE_NUMBERS = r"॥\s*([\u0966-\u096F]+(?:[-\.]+[\u0966-\u096F]+)*)\s*॥$"
-    for el in block.findall('.//lg'):
-        if (n := el.attrib.get('n', None)) is not None:
+    for el in block.findall(".//lg"):
+        if (n := el.attrib.get("n", None)) is not None:
             n = n.removeprefix(el.tag)
-            text = ''.join(el.itertext())
+            text = "".join(el.itertext())
             if m := re.search(RE_VERSE_NUMBERS, text):
                 ret.incr_total()
-                m_n = re.split(r'[-\.]', m.group(1))[-1]
+                m_n = re.split(r"[-\.]", m.group(1))[-1]
                 if n != transliterate(m_n, Scheme.Devanagari, Scheme.Slp1):
                     ret.add_error(
                         f"Verse number mismatch. Expected '{transliterate(n, Scheme.Slp1, Scheme.Devanagari)}' actual was <{m_n}> in text <{m.group(1)}>"
@@ -132,11 +133,12 @@ def validate_verse_number_if_exists(block: ET.Element) -> ValidationResult:
                     ret.incr_ok()
     return ret
 
+
 RULES = [
     validate_all_blocks_have_unique_n,
     validate_xml_is_well_formed,
     validate_all_sanskrit_text_is_well_formed,
-    validate_verse_number_if_exists
+    validate_verse_number_if_exists,
 ]
 
 

@@ -1,6 +1,6 @@
 /* global Sanscript */
 
-import routes from './routes.js';
+import routes from './routes';
 
 function toHK(str) {
   // for unit tests
@@ -73,13 +73,17 @@ export default () => ({
   genres: window.GENRE_NAMES || [],
   newGenreOpen: false,
   newGenreName: '',
-  _allLanguages: null,
+  allLanguages: null,
   pickers: {},
 
   init() {
     this.pickers = {
       lang: createPicker('lang', this, {
-        getItems: (c) => c._allLanguages ||= Object.entries(c.languageLabels).map(([code, label]) => ({ code, label })),
+        getItems: (c) => {
+          c.allLanguages ||= Object.entries(c.languageLabels)
+            .map(([code, label]) => ({ code, label }));
+          return c.allLanguages;
+        },
         displayValue: (c, entry) => c.languageLabels[entry.language] || entry.language,
         match: (opt, query) => opt.label.toLowerCase().includes(query) || opt.code.includes(query),
         onSelect: (entry, opt) => { entry.language = opt.code; },
@@ -93,15 +97,20 @@ export default () => ({
       genre: createPicker('genre', this, {
         getItems: (c) => c.genres,
         displayValue: (c, entry) => entry.genre || '',
-        match: (name, query) => { const lower = name.toLowerCase(); return lower.includes(query) || toHK(name).toLowerCase().startsWith(query); },
+        match: (name, query) => {
+          const lower = name.toLowerCase();
+          return lower.includes(query) || toHK(name).toLowerCase().startsWith(query);
+        },
         onSelect: (entry, name) => { entry.genre = name; },
       }),
     };
     this.generateFieldsFromSchema();
     this.config = window.PUBLISH_CONFIG;
     this.config.publish.forEach((entry) => {
-      this.fields.forEach((f) => { if (!(f.name in entry)) entry[f.name] = this.getDefaultValue(f); });
-      entry._expanded = false;
+      this.fields.forEach((f) => {
+        if (!(f.name in entry)) entry[f.name] = this.getDefaultValue(f);
+      });
+      entry.expanded = false;
     });
   },
 
@@ -201,14 +210,14 @@ export default () => ({
   },
 
   addPublishEntry() {
-    const newEntry = { _expanded: true };
+    const newEntry = { expanded: true };
     this.fields.forEach((f) => { newEntry[f.name] = this.getDefaultValue(f); });
     this.config.publish.push(newEntry);
   },
 
   removePublishEntry(index) {
     const entry = this.config.publish[index];
-    if (this.isEntryEmpty(entry) || confirm('Remove this configuration?')) {
+    if (this.isEntryEmpty(entry) || window.confirm('Remove this configuration?')) {
       this.config.publish.splice(index, 1);
     }
   },

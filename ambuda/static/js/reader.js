@@ -70,21 +70,22 @@ function toAksharas(text) {
   // Combining marks: U+093C-U+094F (nukta, vowel signs, virama), U+0951-U+0954, U+0962-U+0963
   const aksharaRegex = /[\u0900-\u0963\u0970-\u097F][\u093C-\u094F\u0951-\u0954\u0962-\u0963]*/g;
   let lastIndex = 0;
-  let match;
+  let match = aksharaRegex.exec(text);
 
-  while ((match = aksharaRegex.exec(text)) !== null) {
+  while (match !== null) {
     // Add any non-Devanagari characters before this akshara
-    for (let i = lastIndex; i < match.index; i++) {
+    for (let i = lastIndex; i < match.index; i += 1) {
       aksharas.push(text[i]);
     }
 
     // Add the akshara
     aksharas.push(match[0]);
     lastIndex = match.index + match[0].length;
+    match = aksharaRegex.exec(text);
   }
 
   // Add any remaining characters
-  for (let i = lastIndex; i < text.length; i++) {
+  for (let i = lastIndex; i < text.length; i += 1) {
     aksharas.push(text[i]);
   }
 
@@ -459,6 +460,7 @@ export default () => ({
         const data = await resp.json();
         // TODO: Update UI to reflect bookmark state
         // Could show a toast notification or update the bookmark icon
+        // eslint-disable-next-line no-console
         console.log(data.bookmarked ? 'Bookmarked' : 'Bookmark removed');
       } else {
         const error = await resp.json();

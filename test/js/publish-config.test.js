@@ -52,7 +52,7 @@ test('init loads existing entries', () => {
   });
   expect(c.config.publish).toHaveLength(1);
   expect(c.config.publish[0].slug).toBe('test');
-  expect(c.config.publish[0]._expanded).toBe(false);
+  expect(c.config.publish[0].expanded).toBe(false);
 });
 
 test('generateFieldsFromSchema resolves $ref for language', () => {
@@ -73,7 +73,7 @@ test('addPublishEntry adds an expanded entry with defaults', () => {
   c.addPublishEntry();
   expect(c.config.publish).toHaveLength(1);
   const entry = c.config.publish[0];
-  expect(entry._expanded).toBe(true);
+  expect(entry.expanded).toBe(true);
   expect(entry.slug).toBe('');
   expect(entry.title).toBe('');
 });

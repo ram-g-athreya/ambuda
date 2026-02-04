@@ -1,21 +1,21 @@
 Ambuda Documentation
 ====================
 
-This is the technical documentation for Ambuda, a breakthrough Sanskrit library
-hosted at https://ambuda.org. We wrote this guide for anyone who wants to run
-Ambuda locally or contribute to Ambuda's technical work.
+.. warning::
+  We are updating these docs for the first time in several years. Many pages may be out of date.
 
-This doc is owned by our community, and it is a constant work in progress. We
-strive to keep it current, but even so, parts of it might be out of date.
+This is the documentation for Ambuda, an online Sanskrit library hosted at https://ambuda.org.
+We wrote this documentation for anyone interested in Ambuda's technical work. It contains notes on
+our architecture, design decisions, technical stack, and more.
 
-If you have any questions or comments about the material here, please reach out
-to us on our `Discord`_ server so that we can improve our documentation.
+If you have any questions or comments about the material here, please reach out to us on our
+`Discord`_ server.
 
 .. _Discord: https://discord.gg/7rGdTyWY7Z
 
 
-Our technical philosophy
-------------------------
+About Ambuda
+------------
 
 .. toctree::
    :maxdepth: 2
@@ -42,6 +42,15 @@ A map of the codebase
 
    architecture
    project-layout
+
+
+Design decisions
+----------------
+
+.. toctree::
+   :maxdepth: 2
+
+   design/structured-markup.rst
 
 
 Special topics

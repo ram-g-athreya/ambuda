@@ -1,9 +1,11 @@
+/* eslint-disable max-classes-per-file */
 import {
   EditorState, Plugin, Transaction, Selection,
 } from 'prosemirror-state';
 import { EditorView, Decoration, DecorationSet } from 'prosemirror-view';
 import {
-  Schema, Node as PMNode, Mark, Fragment, DOMParser as PMDOMParser, DOMSerializer, NodeSpec, MarkSpec,
+  Schema, Node as PMNode, Mark, Fragment,
+  DOMParser as PMDOMParser, DOMSerializer, NodeSpec, MarkSpec,
 } from 'prosemirror-model';
 import { keymap } from 'prosemirror-keymap';
 import { history, undo as pmUndo, redo as pmRedo } from 'prosemirror-history';
@@ -101,7 +103,9 @@ const marks: Record<string, MarkSpec> = Object.fromEntries(
 const customSchema = new Schema({ nodes, marks });
 
 // Extract the word at the cursor position along with line context
-function getWordAtCursor(state: EditorState): { word: string; lineText: string; wordIndex: number } | null {
+function getWordAtCursor(
+  state: EditorState,
+): { word: string; lineText: string; wordIndex: number } | null {
   const { $from } = state.selection;
   const node = $from.parent;
 
@@ -129,7 +133,7 @@ function getWordAtCursor(state: EditorState): { word: string; lineText: string; 
   const cursorLineOFfset = cursorOffset - lineStart;
   const words = line.split(/\s+/).filter((w) => w.length > 0);
   let pos = 0;
-  for (let i = 0; i < words.length; i++) {
+  for (let i = 0; i < words.length; i += 1) {
     const wordStart = line.indexOf(words[i], pos);
     const wordEnd = wordStart + words[i].length;
     if (cursorLineOFfset >= wordStart && cursorLineOFfset <= wordEnd) {
@@ -142,7 +146,9 @@ function getWordAtCursor(state: EditorState): { word: string; lineText: string; 
 }
 
 // Plugin to track cursor changes and emit active word
-function activeWordPlugin(onActiveWordChange?: (context: { word: string; line: string; wordIndex: number } | null) => void) {
+function activeWordPlugin(
+  onActiveWordChange?: (context: { word: string; line: string; wordIndex: number } | null) => void,
+) {
   return new Plugin({
     view() {
       return {
@@ -187,19 +193,17 @@ function createBlockBelow(state: EditorState, dispatch?: (tr: Transaction) => vo
       } else if (currentPos >= cursorInBlock) {
         // Entire child is after cursor
         contentAfter.push(child);
-      } else {
+      } else if (child.isText) {
         // Cursor is within this child (text node)
-        if (child.isText) {
-          const splitPoint = cursorInBlock - currentPos;
-          const textBefore = child.text!.substring(0, splitPoint);
-          const textAfter = child.text!.substring(splitPoint);
+        const splitPoint = cursorInBlock - currentPos;
+        const textBefore = child.text!.substring(0, splitPoint);
+        const textAfter = child.text!.substring(splitPoint);
 
-          if (textBefore) {
-            contentBefore.push(state.schema.text(textBefore, child.marks));
-          }
-          if (textAfter) {
-            contentAfter.push(state.schema.text(textAfter, child.marks));
-          }
+        if (textBefore) {
+          contentBefore.push(state.schema.text(textBefore, child.marks));
+        }
+        if (textAfter) {
+          contentAfter.push(state.schema.text(textAfter, child.marks));
         }
       }
 
@@ -528,7 +532,7 @@ class BlockView {
     const pos = this.getPos();
     if (pos === undefined) return -1;
     let offset = 0;
-    for (let i = 0; i < this.view.state.doc.childCount; i++) {
+    for (let i = 0; i < this.view.state.doc.childCount; i += 1) {
       if (offset === pos) return i;
       offset += this.view.state.doc.child(i).nodeSize;
     }
@@ -580,7 +584,7 @@ class BlockView {
       return;
     }
 
-    if (confirm('Are you sure you want to remove this block?')) {
+    if (window.confirm('Are you sure you want to remove this block?')) {
       const tr = this.view.state.tr.delete(pos, pos + this.node.nodeSize);
       this.view.dispatch(tr);
     }
@@ -610,6 +614,57 @@ class BlockView {
   }
 }
 
+function parseInlineContent(elem: Element, schema: Schema): PMNode[] {
+  const result: PMNode[] = [];
+
+  function serializeNode(node: Node): string {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return node.textContent || '';
+    } if (node.nodeType === Node.ELEMENT_NODE) {
+      const el = node as Element;
+      const tagName = el.tagName.toLowerCase();
+      const children = Array.from(node.childNodes).map(serializeNode).join('');
+      return `<${tagName}>${children}</${tagName}>`;
+    }
+    return '';
+  }
+
+  function traverse(node: Node, activeMarks: readonly Mark[] = []) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = node.textContent || '';
+      if (text) {
+        result.push(schema.text(text, activeMarks));
+      }
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      const el = node as Element;
+      const tagName = el.tagName.toLowerCase();
+
+      // Check if it's a mark we want to render visually
+      const validMarkNames = getAllMarkNames();
+      if (validMarkNames.includes(tagName)) {
+        const mark = schema.mark(tagName);
+        const newMarks = mark.addToSet(activeMarks);
+        // Traverse children with the mark applied
+        for (let i = 0; i < node.childNodes.length; i += 1) {
+          traverse(node.childNodes[i], newMarks);
+        }
+      } else {
+        // For other inline elements (like <a>, <b>, etc.), preserve them as text
+        const serialized = serializeNode(node);
+        if (serialized) {
+          result.push(schema.text(serialized, activeMarks));
+        }
+      }
+    }
+  }
+
+  for (let i = 0; i < elem.childNodes.length; i += 1) {
+    traverse(elem.childNodes[i]);
+  }
+
+  return result;
+}
+
 // Parse XML content to ProseMirror document
 // XML is always rooted in a <page> tag containing block elements
 function parseXMLToDoc(xmlString: string, schema: Schema): PMNode {
@@ -637,7 +692,7 @@ function parseXMLToDoc(xmlString: string, schema: Schema): PMNode {
   }
 
   // Parse all child block elements
-  for (let i = 0; i < pageElement.children.length; i++) {
+  for (let i = 0; i < pageElement.children.length; i += 1) {
     const elem = pageElement.children[i];
     const type = elem.tagName.toLowerCase();
 
@@ -662,53 +717,28 @@ function parseXMLToDoc(xmlString: string, schema: Schema): PMNode {
   return schema.node('doc', null, blocks);
 }
 
-function parseInlineContent(elem: Element, schema: Schema): PMNode[] {
-  const result: PMNode[] = [];
+function escapeXML(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
 
-  function serializeNode(node: Node): string {
-    if (node.nodeType === Node.TEXT_NODE) {
-      return node.textContent || '';
-    } if (node.nodeType === Node.ELEMENT_NODE) {
-      const el = node as Element;
-      const tagName = el.tagName.toLowerCase();
-      const children = Array.from(node.childNodes).map(serializeNode).join('');
-      return `<${tagName}>${children}</${tagName}>`;
+function serializeInlineContent(node: PMNode): string {
+  let result = '';
+
+  node.forEach((child) => {
+    if (child.isText) {
+      let text = escapeXML(child.text || '');
+      child.marks.forEach((mark) => {
+        text = `<${mark.type.name}>${text}</${mark.type.name}>`;
+      });
+
+      result += text;
     }
-    return '';
-  }
-
-  function traverse(node: Node, marks: readonly Mark[] = []) {
-    if (node.nodeType === Node.TEXT_NODE) {
-      const text = node.textContent || '';
-      if (text) {
-        result.push(schema.text(text, marks));
-      }
-    } else if (node.nodeType === Node.ELEMENT_NODE) {
-      const el = node as Element;
-      const tagName = el.tagName.toLowerCase();
-
-      // Check if it's a mark we want to render visually
-      const validMarkNames = getAllMarkNames();
-      if (validMarkNames.includes(tagName)) {
-        const mark = schema.mark(tagName);
-        const newMarks = mark.addToSet(marks);
-        // Traverse children with the mark applied
-        for (let i = 0; i < node.childNodes.length; i++) {
-          traverse(node.childNodes[i], newMarks);
-        }
-      } else {
-        // For other inline elements (like <a>, <b>, etc.), preserve them as text
-        const serialized = serializeNode(node);
-        if (serialized) {
-          result.push(schema.text(serialized, marks));
-        }
-      }
-    }
-  }
-
-  for (let i = 0; i < elem.childNodes.length; i++) {
-    traverse(elem.childNodes[i]);
-  }
+  });
 
   return result;
 }
@@ -735,32 +765,6 @@ function serializeDocToXML(doc: PMNode): string {
   return `<page>\n${parts.join('\n')}\n</page>`;
 }
 
-function serializeInlineContent(node: PMNode): string {
-  let result = '';
-
-  node.forEach((child, _, index) => {
-    if (child.isText) {
-      let text = escapeXML(child.text || '');
-      child.marks.forEach((mark) => {
-        text = `<${mark.type.name}>${text}</${mark.type.name}>`;
-      });
-
-      result += text;
-    }
-  });
-
-  return result;
-}
-
-function escapeXML(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-}
-
 // Schema for XML editing mode - a simple code editor
 const xmlSchema = new Schema({
   nodes: {
@@ -784,6 +788,31 @@ const xmlSchema = new Schema({
   marks: {},
 });
 
+function createXMLDecorations(state: EditorState): DecorationSet {
+  const decorations: Decoration[] = [];
+  const text = state.doc.textContent;
+
+  const tagRegex = /<\/?([a-zA-Z][\w-]*)((?:\s+[\w-]+(?:="[^"]*")?)*)\s*\/?>/g;
+  let match = tagRegex.exec(text);
+
+  while (match !== null) {
+    // Positions need to account for document structure:
+    // doc (pos 0) -> codeblock (pos 1) -> text content starts at pos 1
+    // So we add 1 to convert text offsets to document positions
+    const from = match.index + 1;
+    const to = match.index + match[0].length + 1;
+
+    decorations.push(
+      Decoration.inline(from, to, {
+        style: 'color: #60a5fa;', // Blue color for tags
+      }),
+    );
+    match = tagRegex.exec(text);
+  }
+
+  return DecorationSet.create(state.doc, decorations);
+}
+
 // Plugin to add XML syntax highlighting decorations
 function xmlHighlightPlugin() {
   return new Plugin({
@@ -804,30 +833,6 @@ function xmlHighlightPlugin() {
   });
 }
 
-function createXMLDecorations(state: EditorState): DecorationSet {
-  const decorations: Decoration[] = [];
-  const text = state.doc.textContent;
-
-  const tagRegex = /<\/?([a-zA-Z][\w-]*)((?:\s+[\w-]+(?:="[^"]*")?)*)\s*\/?>/g;
-  let match;
-
-  while ((match = tagRegex.exec(text)) !== null) {
-    // Positions need to account for document structure:
-    // doc (pos 0) -> codeblock (pos 1) -> text content starts at pos 1
-    // So we add 1 to convert text offsets to document positions
-    const from = match.index + 1;
-    const to = match.index + match[0].length + 1;
-
-    decorations.push(
-      Decoration.inline(from, to, {
-        style: 'color: #60a5fa;', // Blue color for tags
-      }),
-    );
-  }
-
-  return DecorationSet.create(state.doc, decorations);
-}
-
 export class XMLView {
   view: EditorView;
 
@@ -835,6 +840,7 @@ export class XMLView {
 
   onChange?: () => void;
 
+  // eslint-disable-next-line default-param-last
   constructor(element: HTMLElement, initialContent: string = '', onChange?: () => void) {
     this.schema = xmlSchema;
     this.onChange = onChange;
@@ -932,7 +938,9 @@ export default class {
 
   onChange?: () => void;
 
-  onActiveWordChange?: (context: { word: string; lineText: string; wordIndex: number } | null) => void;
+  onActiveWordChange?: (
+    context: { word: string; lineText: string; wordIndex: number } | null,
+  ) => void;
 
   showAdvancedOptions: boolean;
 
@@ -940,7 +948,19 @@ export default class {
 
   textZoom: number;
 
-  constructor(element: HTMLElement, initialContent: string = '', onChange?: () => void, showAdvancedOptions: boolean = false, textZoom: number = 1.0, onActiveWordChange?: (context: { word: string; lineText: string; wordIndex: number } | null) => void) {
+  constructor(
+    element: HTMLElement,
+    // eslint-disable-next-line default-param-last
+    initialContent: string = '',
+    onChange?: () => void,
+    // eslint-disable-next-line default-param-last
+    showAdvancedOptions: boolean = false,
+    // eslint-disable-next-line default-param-last
+    textZoom: number = 1.0,
+    onActiveWordChange?: (
+      context: { word: string; lineText: string; wordIndex: number } | null,
+    ) => void,
+  ) {
     this.schema = customSchema;
     this.onChange = onChange;
     this.onActiveWordChange = onActiveWordChange;
@@ -1019,7 +1039,6 @@ export default class {
   }
 
   toggleMark(markType: MarkName) {
-    console.log('togglemark', markType);
     const { state, dispatch } = this.view;
     const { from, to } = state.selection;
 
@@ -1036,27 +1055,27 @@ export default class {
     }
   }
 
-  _getBlockIndexFromSelection(): number {
+  getBlockIndexFromSelection(): number {
     const { state } = this.view;
     const { $from } = state.selection;
 
     let blockDepth = $from.depth;
     while (blockDepth > 0 && state.doc.resolve($from.pos).node(blockDepth).type.name !== 'block') {
-      blockDepth--;
+      blockDepth -= 1;
     }
     if (blockDepth === 0) return -1;
 
     const currentBlock = $from.node(blockDepth);
-    for (let i = 0; i < state.doc.childCount; i++) {
+    for (let i = 0; i < state.doc.childCount; i += 1) {
       if (state.doc.child(i) === currentBlock) return i;
     }
     return -1;
   }
 
-  _getBlockStartPos(index: number): number {
+  getBlockStartPos(index: number): number {
     const { state } = this.view;
     let pos = 0;
-    for (let i = 0; i < index; i++) {
+    for (let i = 0; i < index; i += 1) {
       pos += state.doc.child(i).nodeSize;
     }
     return pos;
@@ -1064,10 +1083,10 @@ export default class {
 
   insertBlock(blockIndex?: number) {
     const { state, dispatch } = this.view;
-    if (blockIndex === undefined) blockIndex = this._getBlockIndexFromSelection();
+    if (blockIndex === undefined) blockIndex = this.getBlockIndexFromSelection();
     if (blockIndex < 0) return;
 
-    const afterPos = this._getBlockStartPos(blockIndex) + state.doc.child(blockIndex).nodeSize;
+    const afterPos = this.getBlockStartPos(blockIndex) + state.doc.child(blockIndex).nodeSize;
     const newBlock = this.schema.nodes.block.create({ type: 'p' });
     const tr = state.tr.insert(afterPos, newBlock);
     tr.setSelection(Selection.near(tr.doc.resolve(afterPos + 1)));
@@ -1080,12 +1099,12 @@ export default class {
 
   deleteActiveBlock(blockIndex?: number) {
     const { state, dispatch } = this.view;
-    if (blockIndex === undefined) blockIndex = this._getBlockIndexFromSelection();
+    if (blockIndex === undefined) blockIndex = this.getBlockIndexFromSelection();
     if (blockIndex < 0) return;
 
     if (state.doc.childCount === 1) return;
 
-    const blockPos = this._getBlockStartPos(blockIndex);
+    const blockPos = this.getBlockStartPos(blockIndex);
     const tr = state.tr.delete(blockPos, blockPos + state.doc.child(blockIndex).nodeSize);
     dispatch(tr);
 
@@ -1095,24 +1114,24 @@ export default class {
   }
 
   moveBlockUp(blockIndex?: number) {
-    if (blockIndex === undefined) blockIndex = this._getBlockIndexFromSelection();
+    if (blockIndex === undefined) blockIndex = this.getBlockIndexFromSelection();
     if (blockIndex <= 0) return;
-    this._swapBlocks(blockIndex - 1, blockIndex);
+    this.swapBlocks(blockIndex - 1, blockIndex);
   }
 
   moveBlockDown(blockIndex?: number) {
-    if (blockIndex === undefined) blockIndex = this._getBlockIndexFromSelection();
+    if (blockIndex === undefined) blockIndex = this.getBlockIndexFromSelection();
     if (blockIndex < 0 || blockIndex >= this.view.state.doc.childCount - 1) return;
-    this._swapBlocks(blockIndex, blockIndex + 1);
+    this.swapBlocks(blockIndex, blockIndex + 1);
   }
 
-  private _swapBlocks(indexA: number, indexB: number) {
+  private swapBlocks(indexA: number, indexB: number) {
     const { state, dispatch } = this.view;
     const blockA = state.doc.child(indexA);
     const blockB = state.doc.child(indexB);
 
     const newChildren: PMNode[] = [];
-    for (let i = 0; i < state.doc.childCount; i++) {
+    for (let i = 0; i < state.doc.childCount; i += 1) {
       if (i === indexA) newChildren.push(blockB);
       else if (i === indexB) newChildren.push(blockA);
       else newChildren.push(state.doc.child(i));
@@ -1121,7 +1140,7 @@ export default class {
     const newDoc = state.schema.node('doc', null, newChildren);
     let tr = state.tr.replaceWith(0, state.doc.content.size, newDoc);
     // Place cursor in whichever block ended up at indexA (the earlier position)
-    tr = tr.setSelection(Selection.near(tr.doc.resolve(this._getBlockStartPos(indexA) + 1)));
+    tr = tr.setSelection(Selection.near(tr.doc.resolve(this.getBlockStartPos(indexA) + 1)));
     dispatch(tr);
 
     if (this.onChange) {
@@ -1130,16 +1149,16 @@ export default class {
   }
 
   mergeBlockUp(blockIndex?: number) {
-    this._mergeBlocks('up', blockIndex);
+    this.mergeBlocks('up', blockIndex);
   }
 
   mergeBlockDown(blockIndex?: number) {
-    this._mergeBlocks('down', blockIndex);
+    this.mergeBlocks('down', blockIndex);
   }
 
-  _mergeBlocks(direction: 'up' | 'down', blockIndex?: number) {
+  mergeBlocks(direction: 'up' | 'down', blockIndex?: number) {
     const { state, dispatch } = this.view;
-    if (blockIndex === undefined) blockIndex = this._getBlockIndexFromSelection();
+    if (blockIndex === undefined) blockIndex = this.getBlockIndexFromSelection();
 
     if (direction === 'up' && blockIndex <= 0) return;
     if (direction === 'down' && (blockIndex < 0 || blockIndex >= state.doc.childCount - 1)) return;
@@ -1158,12 +1177,10 @@ export default class {
     const mergedBlock = keepBlock.copy(mergedContent);
 
     const newChildren: PMNode[] = [];
-    for (let i = 0; i < state.doc.childCount; i++) {
+    for (let i = 0; i < state.doc.childCount; i += 1) {
       if (i === keepIndex) {
         newChildren.push(mergedBlock);
-      } else if (i === removeIndex) {
-        continue;
-      } else {
+      } else if (i !== removeIndex) {
         newChildren.push(state.doc.child(i));
       }
     }
@@ -1172,7 +1189,7 @@ export default class {
     let tr = state.tr.replaceWith(0, state.doc.content.size, newDoc);
 
     let targetPos = 0;
-    for (let i = 0; i < keepIndex; i++) {
+    for (let i = 0; i < keepIndex; i += 1) {
       targetPos += newChildren[i].nodeSize;
     }
     tr = tr.setSelection(Selection.near(tr.doc.resolve(targetPos + 1)));
