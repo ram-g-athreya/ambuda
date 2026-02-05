@@ -26,6 +26,11 @@
   {{ mf.auth_input(form.password) }}
   </div>
 
+  <div class="mb-4 flex items-center">
+    {{ form.remember(class="mr-2") }}
+    {{ form.remember.label(class="text-sm text-slate-600") }}
+  </div>
+
   {{ mf.auth_submit(_("Sign in")) }}
 </form>
 

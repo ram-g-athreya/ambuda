@@ -96,6 +96,34 @@ def test_sign_in__unauth_post__ok(client):
     assert r.status_code == 302
 
 
+def test_sign_in__remember_me(client):
+    r = client.post(
+        "/sign-in",
+        data={
+            "username": "u-basic",
+            "password": "pass_basic",
+        },
+    )
+    assert r.status_code == 302
+
+    set_cookie = r.headers.get("Set-Cookie", "")
+    assert "remember_token" not in set_cookie
+
+    client.get("/sign-out")
+
+    r = client.post(
+        "/sign-in",
+        data={
+            "username": "u-basic",
+            "password": "pass_basic",
+            "remember": "y",
+        },
+    )
+    assert r.status_code == 302
+    set_cookie = r.headers.get("Set-Cookie", "")
+    assert "remember_token" in set_cookie
+
+
 def test_sign_in__unauth_post__bad_username(client):
     r = client.post(
         "/sign-in",

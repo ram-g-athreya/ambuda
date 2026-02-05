@@ -79,7 +79,11 @@ class Filter:
 
         i = 0
 
-        def parse_list():
+        def parse_list(depth=0):
+            _MAX_DEPTH = 5
+            if depth > _MAX_DEPTH:
+                raise ValueError(f"Filter is more than {_MAX_DEPTH} levels deep")
+
             nonlocal i
             result = []
             i += 1
@@ -96,7 +100,7 @@ class Filter:
                     return result
 
                 if sexp[i] == "(":
-                    result.append(parse_list())
+                    result.append(parse_list(depth + 1))
                 else:
                     atom_start = i
                     while i < len(sexp) and sexp[i] not in "() \t\n\r":

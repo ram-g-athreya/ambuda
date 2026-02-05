@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+import defusedxml.ElementTree as DET
+
 from vidyut.lipi import transliterate, Scheme
 
 #: Most texts have multiple sections and use section slugs like "1", "2", etc.
@@ -178,7 +180,7 @@ def _parse_sections(xml: ET.Element) -> list[Section]:
 
 
 def parse_document(path: Path) -> Document:
-    xml = ET.parse(path).getroot()
+    xml = DET.parse(path).getroot()
     _remove_namespace(xml, NS["tei"])
 
     header = xml.find("./teiHeader")

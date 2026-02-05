@@ -86,6 +86,8 @@ class BaseConfig:
     #: Where to store user uploads (PDFs, images, etc.).
     UPLOAD_FOLDER = _env("FLASK_UPLOAD_FOLDER")
 
+    MAX_CONTENT_LENGTH = 256 * 1024 * 1024
+
     #: Logger setup
     LOG_LEVEL = logging.INFO
 
@@ -173,6 +175,7 @@ class UnitTestConfig:
     SECRET_KEY = "insecure unit test secret"
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     UPLOAD_FOLDER = _make_path(Path(__file__).parent / "data" / "file-uploads")
+    MAX_CONTENT_LENGTH = 256 * 1024 * 1024
     VIDYUT_DATA_DIR = "test-vidyut"
     BABEL_DEFAULT_LOCALE = "en"
 
@@ -219,13 +222,17 @@ class StagingConfig(BaseConfig):
     """For staging."""
 
     AMBUDA_ENVIRONMENT = Env.STAGING
-    DEBUG = True
+    DEBUG = False
     #: If set, automatically reload Flask templates (including imports) when
     #: they change on disk.
     TEMPLATES_AUTO_RELOAD = False
 
     #: Logger setup
     LOG_LEVEL = logging.INFO
+
+    SESSION_COOKIE_SECURE = True
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = "Lax"
 
 
 class ProductionConfig(BaseConfig):
@@ -235,6 +242,10 @@ class ProductionConfig(BaseConfig):
 
     #: Logger setup
     LOG_LEVEL = logging.INFO
+
+    SESSION_COOKIE_SECURE = True
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = "Lax"
 
     # Deployment credentials
     # ----------------------

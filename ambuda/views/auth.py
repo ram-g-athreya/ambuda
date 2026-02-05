@@ -22,7 +22,7 @@ from flask import Blueprint, flash, redirect, render_template, url_for
 from flask_babel import lazy_gettext as _l
 from flask_login import current_user, login_required, login_user, logout_user
 from flask_wtf import FlaskForm, RecaptchaField
-from wtforms import EmailField, PasswordField, StringField
+from wtforms import BooleanField, EmailField, PasswordField, StringField
 from wtforms import validators as val
 
 import ambuda.queries as q
@@ -175,6 +175,7 @@ class SignupForm(FlaskForm):
 class SignInForm(FlaskForm):
     username = StringField(_l("Username"), get_legacy_username_validators())
     password = PasswordField(_l("Password"), get_password_validators())
+    remember = BooleanField(_l("Remember me"))
 
 
 class ResetPasswordForm(FlaskForm):
@@ -210,7 +211,7 @@ def register():
             email=form.email.data,
             raw_password=form.password.data,
         )
-        login_user(user, remember=True)
+        login_user(user, remember=False)
         return redirect(url_for(POST_AUTH_ROUTE))
     else:
         # Override the default message ("The response parameter is missing.")
@@ -232,7 +233,7 @@ def sign_in():
     if form.validate_on_submit():
         user = q.user(form.username.data)
         if user and user.check_password(form.password.data):
-            login_user(user, remember=True)
+            login_user(user, remember=form.remember.data)
             return redirect(url_for(POST_AUTH_ROUTE))
         else:
             flash("Invalid username or password.")

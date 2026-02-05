@@ -266,9 +266,13 @@ def create_project():
             flash("Please upload a PDF.")
             return render_template("proofing/create-project.html", form=form)
 
-        # Calculate MD5 of file content
         file_data = form.local_file.data
+        file_data.seek(0, 2)
+        size = file_data.tell()
         file_data.seek(0)
+        if size > 128 * 1024 * 1024:
+            flash("PDF must be under 128 MB.")
+            return render_template("proofing/create-project.html", form=form)
 
         # Create all directories for this project ahead of time.
         # FIXME(arun): push this further into the Celery task.

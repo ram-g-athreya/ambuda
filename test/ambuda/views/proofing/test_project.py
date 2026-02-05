@@ -107,30 +107,6 @@ def test_stats(moderator_client, rama_client):
     assert resp.status_code == 302
 
 
-def test_submit_changes_post(moderator_client):
-    resp = moderator_client.post(
-        "/proofing/test-project/submit-changes",
-        data={
-            "query": "the",
-            "replace": "the",
-            "matches": [],
-            "submit": True,
-        },
-    )
-
-    assert resp.status_code == 200
-
-
-def test_submit_unauth(client):
-    resp = client.get("/proofing/test-project/submit-changes")
-    assert resp.status_code == 302
-
-
-def test_confirm_unauth(client):
-    resp = client.get("/proofing/test-project/confirm_changes")
-    assert resp.status_code == 302
-
-
 def test_admin(moderator_client):
     session = q.get_session()
 

@@ -332,3 +332,9 @@ def test_create_tei_document__autoincrement_with_mixed_types():
             s.TEIBlock(xml='<p n="p3">c</p>', slug="p3", page_id=1),
         ],
     )
+
+
+def test_filter_parse__rejects_deeply_nested_sexp():
+    deeply_nested = "(" * 50 + "and" + ")" * 50
+    with pytest.raises(ValueError, match="levels deep"):
+        s.Filter(deeply_nested)

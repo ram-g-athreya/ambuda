@@ -32,6 +32,17 @@ from ambuda.tasks.text_exports import (
 )
 from ambuda.utils.tei_parser import parse_document
 
+_UPLOAD_MAX_SIZE = 128 * 1024 * 1024
+
+
+def _check_file_size(file, max_size=_UPLOAD_MAX_SIZE):
+    file.seek(0, 2)
+    size = file.tell()
+    file.seek(0)
+    if size > max_size:
+        raise ValueError(f"File exceeds {max_size // (1024 * 1024)} MB limit")
+    return size
+
 
 def get_model_configs_context():
     """Get model configs for template context."""
@@ -87,6 +98,8 @@ def import_text(model_name, selected_ids: list | None = None):
 
             tmp_path = None
             try:
+                _check_file_size(xml_file)
+
                 with tempfile.NamedTemporaryFile(
                     mode="wb", suffix=".xml", delete=False
                 ) as tmp_file:
@@ -159,6 +172,8 @@ def import_parse_data(model_name, selected_ids: list | None = None):
 
             tmp_path = None
             try:
+                _check_file_size(parse_file)
+
                 with tempfile.NamedTemporaryFile(
                     mode="wb", suffix=".txt", delete=False
                 ) as tmp_file:
@@ -266,6 +281,7 @@ def import_metadata(model_name, selected_ids: list | None = None):
 
         session = q.get_session()
         try:
+            _check_file_size(json_file)
             metadata_list = json.load(json_file.stream)
 
             updated_count, not_found_slugs = data_utils.import_text_metadata(
@@ -377,6 +393,8 @@ def import_dictionaries(model_name, selected_ids: list | None = None):
 
             tmp_path = None
             try:
+                _check_file_size(xml_file)
+
                 with tempfile.NamedTemporaryFile(
                     mode="wb", suffix=".xml", delete=False
                 ) as tmp_file:
@@ -539,6 +557,7 @@ def import_projects(model_name, selected_ids: list | None = None):
                 **get_model_configs_context(),
             )
 
+        _check_file_size(json_file)
         data = json.load(json_file.stream)
         projects_data = data.get("projects", [])
 

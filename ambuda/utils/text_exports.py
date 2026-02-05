@@ -225,9 +225,12 @@ def create_xml_file(text: db.Text, out_path: Path) -> None:
             text_lang = "TODO"
             with xf.element("text", {"xml:id": text_id, "xml:lang": text_lang}):
                 with xf.element("body"):
+                    safe_parser = etree.XMLParser(
+                        resolve_entities=False, load_dtd=False
+                    )
                     for section in text.sections:
                         for block in section.blocks:
-                            el = etree.fromstring(block.xml)
+                            el = etree.fromstring(block.xml, safe_parser)
                             el.set("n", block.slug)
                             xf.write(el)
                         session.expire(section)
