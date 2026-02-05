@@ -2,7 +2,9 @@
 
 import json
 import os
+from xml.etree import ElementTree as ET
 
+from defusedxml import ElementTree as DET
 from flask import (
     Blueprint,
     Response,
@@ -13,7 +15,9 @@ from flask import (
     url_for,
     send_file,
 )
+from flask import current_app
 from flask_login import current_user, login_required
+from sqlalchemy import select
 from vidyut.lipi import transliterate, Scheme
 
 import ambuda.database as db
@@ -28,8 +32,6 @@ from ambuda.utils.text_validation import validate
 from ambuda.views.api import bp as api
 from ambuda.views.reader.schema import Block, Section
 from ambuda.utils.s3 import S3Path
-from flask import current_app
-from sqlalchemy import select
 
 bp = Blueprint("texts", __name__)
 
@@ -141,11 +143,19 @@ def text_about(slug):
         abort(404)
     assert text
 
+    try:
+        header_xml = DET.fromstring(text.header)
+        ET.indent(header_xml, space="  ", level=0)
+        header_text = ET.tostring(header_xml, encoding="unicode")
+    except Exception:
+        header_text = ""
+
     header_data = xml.parse_tei_header(text.header)
     return render_template(
         "texts/text-about.html",
         text=text,
         header=header_data,
+        raw_header=header_text,
     )
 
 

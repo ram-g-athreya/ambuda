@@ -36,6 +36,15 @@ Attributes = NewType("Attributes", dict[str, str])
 
 
 @dataclass
+class ParsedTEIHeader:
+    title: str
+    author: str
+    publisher: str
+    publisher_place: str
+    availability: str
+
+
+@dataclass
 class Rule:
     """Describes how to modify an XML element."""
 
@@ -390,7 +399,7 @@ def _text_of(xml: ET.Element, path: str, default: str) -> str:
         return default
 
 
-def parse_tei_header(blob: str | None) -> dict[str, str]:
+def parse_tei_header(blob: str | None) -> ParsedTEIHeader:
     """Transform a TEI `teiHeader` element to HTML."""
     if not blob:
         return {}
@@ -404,12 +413,13 @@ def parse_tei_header(blob: str | None) -> dict[str, str]:
     else:
         availability = ""
 
-    return {
-        "title": _text_of(file_desc, "./titleStmt/title", "Unknown"),
-        "author": _text_of(file_desc, "./titleStmt/author", "Unknown"),
-        "publisher": _text_of(file_desc, "./publicationStmt/publisher", "Unknown"),
-        "availability": availability,
-    }
+    return ParsedTEIHeader(
+        title=_text_of(file_desc, "./titleStmt/title", "Unknown"),
+        author=_text_of(file_desc, "./sourceDesc/bibl/author", "Unknown"),
+        publisher=_text_of(file_desc, "./sourceDesc/bibl/publisher", "Unknown"),
+        publisher_place=_text_of(file_desc, "./sourceDesc/bibl/pubPlace", "Unknown"),
+        availability=availability,
+    )
 
 
 def transform_sak(blob: str) -> str:

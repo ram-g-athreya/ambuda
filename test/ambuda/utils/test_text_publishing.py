@@ -19,6 +19,22 @@ class MockRevision:
     status: MockStatus | None = None
 
 
+@dc.dataclass
+class MockPage:
+    revisions: list[MockRevision]
+
+
+@dc.dataclass
+class MockProject:
+    pages: list[MockPage]
+    page_numbers: str = ""
+
+
+@dc.dataclass
+class MockConfig:
+    target: str = "(and)"
+
+
 @pytest.mark.parametrize(
     "input,expected",
     [
@@ -170,16 +186,17 @@ def test_rewrite_block_to_tei_xml__chaya(input, expected):
 
 
 def _test_create_tei_document(input, expected):
-    """Helper function for testing create_tei_document."""
-    revisions = []
+    """Helper function for testing _create_tei_sections_and_blocks."""
+    pages = []
     for i, page_xml in enumerate(input):
-        revisions.append(MockRevision(id=i, page_id=i, content=page_xml))
+        revision = MockRevision(id=i, page_id=i, content=page_xml)
+        pages.append(MockPage(revisions=[revision]))
 
-    page_numbers = [str(x + 1) for x in range(len(revisions))]
-    tei_doc, _errors, _page_statuses = s.create_tei_document(
-        revisions, page_numbers, "(and)"
-    )
-    tei_blocks = tei_doc.sections[0].blocks
+    project = MockProject(pages=pages)
+    config = MockConfig()
+
+    conversion = s._create_tei_sections_and_blocks(project, config)
+    tei_blocks = conversion.sections[0].blocks
     assert tei_blocks == expected
 
 

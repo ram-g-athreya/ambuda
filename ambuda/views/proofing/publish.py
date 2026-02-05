@@ -2,7 +2,10 @@
 
 import dataclasses as dc
 import re
+import tempfile
 from datetime import UTC, datetime
+from pathlib import Path
+from lxml import etree
 from xml.etree import ElementTree as ET
 
 from slugify import slugify
@@ -31,7 +34,6 @@ from ambuda.models.proofing import (
 from ambuda.models.texts import TextStatus
 from ambuda.utils import diff as diff_utils
 from ambuda.utils import project_utils
-from ambuda.utils.text_publishing import TEIDocument
 from ambuda.views.proofing.decorators import p2_required
 
 
@@ -191,7 +193,10 @@ def preview(project_slug, text_slug):
             .all()
         )
 
-    document, _ = _create_tei_document(project_, config.target or "()")
+    with tempfile.NamedTemporaryFile(delete_on_close=False) as fp:
+        fp.close()
+        _ = publishing_utils.create_tei_document(project_, config, Path(fp.name))
+        document = publishing_utils.parse_tei_document(Path(fp.name))
     new_blocks = [b.xml for section in document.sections for b in section.blocks]
 
     diffs = []
@@ -250,33 +255,10 @@ def preview(project_slug, text_slug):
     )
 
 
-def _create_tei_document(project_, target: str) -> tuple[TEIDocument, set[str]]:
-    """Gather content blocks from all pages for a specific target.
-
-    Returns:
-        A tuple of (TEIDocument, set of page statuses).
-    """
-    revisions = []
-    for page in project_.pages:
-        if not page.revisions:
-            continue
-        latest_revision = page.revisions[-1]
-        revisions.append(latest_revision)
-
-    rules = project_utils.parse_page_number_spec(project_.page_numbers)
-    page_numbers = project_utils.apply_rules(len(project_.pages), rules)
-    doc, _errors, page_statuses = publishing_utils.create_tei_document(
-        revisions=revisions,
-        page_numbers=page_numbers,
-        target=target,
-    )
-    return doc, page_statuses
-
-
 @bp.route("/<project_slug>/publish/<text_slug>/create", methods=["POST"])
 @p2_required
 def create(project_slug, text_slug):
-    """Create or update texts based on the publish configuration."""
+    """Create or update texts based on the specified publish config."""
     config_page = lambda: redirect(
         url_for("proofing.publish.config", slug=project_slug)
     )
@@ -303,7 +285,20 @@ def create(project_slug, text_slug):
     updated_count = 0
     texts_map = {}
 
-    document, page_statuses = _create_tei_document(project_, config.target)
+    with tempfile.NamedTemporaryFile(delete_on_close=False) as fp:
+        fp.close()
+        document_data = publishing_utils.create_tei_document(
+            project_, config, Path(fp.name)
+        )
+        header = ""
+        _ns = "{http://www.tei-c.org/ns/1.0}"
+        for event, elem in etree.iterparse(fp.name, events=("end",)):
+            if elem.tag == f"{_ns}teiHeader":
+                for x in elem.getiterator():
+                    x.tag = etree.QName(x).localname
+                etree.cleanup_namespaces(elem)
+                header = ET.tostring(elem, encoding="unicode")
+                break
 
     text = q.text(config.slug)
     is_new_text = False
@@ -318,6 +313,7 @@ def create(project_slug, text_slug):
         session.flush()
         is_new_text = True
 
+    text.header = header
     text.project_id = project_.id
     text.language = config.language
     text.title = config.title
@@ -346,18 +342,19 @@ def create(project_slug, text_slug):
     else:
         text.genre_id = None
 
-    if SitePageStatus.R0.value in page_statuses:
+    if SitePageStatus.R0.value in document_data.page_statuses:
         text.status = TextStatus.P0
-    elif SitePageStatus.R1.value in page_statuses:
+    elif SitePageStatus.R1.value in document_data.page_statuses:
         text.status = TextStatus.P1
     else:
         text.status = TextStatus.P2
 
     existing_sections = {s.slug for s in text.sections}
-    doc_sections = {s.slug for s in document.sections}
+    doc_sections = {s.slug for s in document_data.sections}
     section_map = {s.slug: s for s in text.sections}
 
     if existing_sections != doc_sections:
+        # TODO: align existing and new sections to minimize diff thrash, keep alignment.
         new_sections = doc_sections - existing_sections
         old_sections = existing_sections - doc_sections
 
@@ -369,7 +366,7 @@ def create(project_slug, text_slug):
 
         for new_slug in new_sections:
             doc_section = next(
-                (s for s in document.sections if s.slug == new_slug), None
+                (s for s in document_data.sections if s.slug == new_slug), None
             )
             if doc_section:
                 new_section = db.TextSection(
@@ -390,7 +387,7 @@ def create(project_slug, text_slug):
         .scalars()
         .all()
     }
-    doc_blocks = {b.slug for s in document.sections for b in s.blocks}
+    doc_blocks = {b.slug for s in document_data.sections for b in s.blocks}
 
     if existing_blocks != doc_blocks:
         old_blocks = existing_blocks - doc_blocks
@@ -423,7 +420,7 @@ def create(project_slug, text_slug):
         existing_blocks_map = {b.slug: b for b in existing_blocks_list}
 
     block_index = 0
-    for doc_section in document.sections:
+    for doc_section in document_data.sections:
         section = section_map[doc_section.slug]
 
         for block in doc_section.blocks:

@@ -1,34 +1,47 @@
 {% extends 'base-text.html' %}
 {% import 'macros/texts.html' as m %}
 
-{% macro tei_header(data) %}
-<section class="prose">
-<dl>
-  <dt>Title</dt> <dd>{{ data.title }}</dd>
-  <dt>Author</dt> <dd>{{ data.author }}</dd>
-  <dt>Publisher</dt> <dd>{{ data.publisher|safe }}</dd>
-  <dt>Availability</dt> <dd>{{ data.availability|safe }}</dd>
-</dl>
-</section>
+{% macro row(label, value) %}
+<tr>
+  <td class="pr-6 py-1.5 text-slate-500 align-top whitespace-nowrap">{{ label }}</td>
+  <td class="py-1.5">{{ value }}</td>
+</tr>
 {% endmacro %}
 
-
 {% block title %}{{ text.title | devanagari }} {{ _('| Ambuda') }}{% endblock %}
-
 
 {% block content %}
 {{ m.text_header(text=text) }}
 {{ m.text_tabs(text=text, active='about') }}
 
 {% if header %}
-  {{ tei_header(header) }}
+<section class="mt-8">
+  <table class="text-sm">
+    <tbody>
+      <tr>
+        <td class="pr-6 py-1.5 text-slate-500 align-top whitespace-nowrap">Project</td>
+        <td>
+          <a class="text-blue-500 hover:underline" href="{{ url_for('proofing.project.summary', slug=text.project.slug) }}">{{ text.project.display_title }}</a>
+        </td>
+      </tr>
+      {{ row('Title', header.title) }}
+      {{ row('Author', header.author) }}
+      {{ row('Publisher', header.publisher) }}
+      {{ row('Location', header.publisher_place) }}
+      {{ row('Availability', header.availability|safe) }}
+      {% if text.project %}
+      {% endif %}
+    </tbody>
+  </table>
+</section>
 {% else %}
-  <p>Sorry, we don't have any data available for this text right now.</p>
+<p class="mt-8 text-slate-500">No metadata available for this text.</p>
 {% endif %}
 
-{% if text.project %}
-<section class="prose mt-8">
-  <p>Project: <a href="{{ url_for('proofing.project.summary', slug=text.project.slug) }}">{{ text.project.display_title }}</a></p>
-</section>
+{% if raw_header %}
+<details class="mt-8">
+  <summary class="text-sm text-slate-400 cursor-pointer select-none hover:text-slate-600">Raw TEI header</summary>
+  <pre class="mt-2 text-xs rounded bg-slate-800 text-white p-4 overflow-x-auto">{{ raw_header }}</pre>
+</details>
 {% endif %}
 {% endblock %}

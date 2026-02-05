@@ -100,9 +100,9 @@ def test_parse_tei_header():
     </teiHeader>
     """
     parsed = x.parse_tei_header(header)
-    assert parsed["title"] == "TITLE"
-    assert parsed["author"] == "AUTHOR"
-    assert parsed["publisher"] == "Ambuda"
+    assert parsed.title == "TITLE"
+    assert parsed.author == "BIBL_AUTHOR"
+    assert parsed.publisher == "BIBL_PUBLISHER"
 
 
 def test_parse_tei_header__elements_missing():
@@ -115,9 +115,9 @@ def test_parse_tei_header__elements_missing():
     </teiHeader>
     """
     parsed = x.parse_tei_header(header)
-    assert parsed["title"] == "Unknown"
-    assert parsed["author"] == "Unknown"
-    assert parsed["publisher"] == "Unknown"
+    assert parsed.title == "Unknown"
+    assert parsed.author == "Unknown"
+    assert parsed.publisher == "Unknown"
 
 
 def test_parse_tei_header__undefined():

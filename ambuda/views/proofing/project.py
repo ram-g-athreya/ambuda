@@ -244,7 +244,7 @@ def activity(slug):
 
 
 @bp.route("/<slug>/edit", methods=["GET", "POST"])
-@login_required
+@p2_required
 def edit(slug):
     """Edit the project's metadata."""
     project_ = q.project(slug)
