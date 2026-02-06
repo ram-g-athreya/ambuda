@@ -3,74 +3,75 @@
 {% import "macros/proofing.html" as m %}
 {% import "macros/icons.html" as i %}
 
+
+{% macro text_li(text) %}
+<li data-key="{{ text.id }}"
+    data-title="{{ text.title }}"
+    data-created="{{ text.created_at or '' }}"
+    x-show="displayed.has('{{ text.id }}')"
+    class="py-3 border-b border-gray-200">
+  <div class="flex justify-between items-center">
+    <div>
+      <a href="{{ url_for('texts.text', slug=text.slug) }}" class="text-sky-900 hover:underline font-medium">
+        {{ text.title }}
+      </a>
+      {% if text.is_p0 %}
+        {{ i.unproofed_text_icon() }}
+      {% endif %}
+      <div class="mt-2 text-xs">
+        <a href="{{ url_for('proofing.tagging.text', text_slug=text.slug) }}" class="text-sky-900 hover:underline">{{ _('Tags') }}</a>
+        <span class="text-slate-300">|</span>
+        <a href="{{ url_for('texts.validate_text', slug=text.slug) }}" class="text-sky-900 hover:underline">{{ _('Report') }}</a>
+      </div>
+    </div>
+    <div class="text-sm text-slate-500 text-right">
+      {% if text.project %}
+        <div>
+          <a href="{{ url_for('proofing.project.summary', slug=text.project.slug) }}" class="hover:underline">{{ text.project.display_title }}</a>
+        </div>
+      {% endif %}
+      {% if text.created_at %}
+        <div class="text-xs mt-2">{{ text.created_at.strftime('%Y-%m-%d') }}</div>
+      {% endif %}
+    </div>
+  </div>
+</li>
+{% endmacro %}
+
+
+{% macro text_list(texts, placeholder) %}
+<div x-data="sortableList('title')">
+
+{{ m.list_toolbar(placeholder, [('title', _('Title')), ('created', _('Created'))]) }}
+
+<ul x-ref="list">
+  {% for text in texts %}
+  {{ text_li(text) }}
+  {% endfor %}
+</ul>
+</div>
+{% endmacro %}
+
+
 {% block title %}{{ mc.title(_('Published Texts')) }}{% endblock %}
 
 {% block content %}
-<div class="mb-4">
-  <div class="prose mb-4">
-    <h1 class="md:!mt-0">{{ _('Texts') }}</h1>
-  </div>
+{{ m.header(_('Texts')) }}
+{{ m.proofing_tabs('texts', current_user) }}
 
-  {{ m.proofing_tabs('texts', current_user) }}
-</div>
-
-{% if texts %}
+{% if texts_with_project or texts_without_project %}
 {{ i.i_exclamation_circle() }}
-<div class="overflow-x-auto">
-  <table class="min-w-full border-collapse border border-slate-300">
-    <thead class="bg-slate-100">
-      <tr>
-        <th class="border border-slate-300 p-2 text-left">{{ _('Title') }}</th>
-        <th class="border border-slate-300 p-2 text-left">{{ _('Project') }}</th>
-        <th class="border border-slate-300 p-2 text-left">{{ _('Author') }}</th>
-        <th class="border border-slate-300 p-2 text-left">{{ _('Created') }}</th>
-        <th class="border border-slate-300 p-2 text-left">{{ _('Actions') }}</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for text in texts %}
-      <tr class="hover:bg-slate-50">
-        <td class="border border-slate-300 p-2">
-          <a href="{{ url_for('texts.text', slug=text.slug) }}" class="text-sky-900 hover:underline">
-            {{ text.title }}
-          </a>
-          {% if text.is_p0 %}
-            {{ i.unproofed_text_icon() }}
-          {% endif %}
-        </td>
-        <td class="border border-slate-300 p-2">
-          {% if text.project %}
-          <a href="{{ url_for('proofing.project.summary', slug=text.project.slug) }}" class="text-sky-900 hover:underline">{{ text.project.display_title }}</a>
-          {% else %}
-          <span class="text-slate-400">---</span>
-          {% endif %}
-        </td>
-        <td class="border border-slate-300 p-2">
-          {% if text.author %}
-          {{ text.author.name }}
-          {% else %}
-          <span class="text-slate-400">---</span>
-          {% endif %}
-        </td>
-        <td class="border border-slate-300 p-2 text-sm text-slate-600">
-          {% if text.created_at %}
-          {{ text.created_at.strftime('%Y-%m-%d') }}
-          {% else %}
-          <span class="text-slate-400">---</span>
-          {% endif %}
-        </td>
-        <td class="border border-slate-300 p-2">
-          <div class="flex gap-2 text-sm">
-            <a href="{{ url_for('proofing.tagging.text', text_slug=text.slug) }}" class="text-sky-900 hover:underline">{{ _('Tags') }}</a>
-            <span class="text-slate-300">|</span>
-            <a href="{{ url_for('texts.validate_text', slug=text.slug) }}" class="text-sky-900 hover:underline">{{ _('Report') }}</a>
-          </div>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+
+{% if texts_with_project %}
+<h2 class="font-bold text-xl mt-6 mb-2">{{ _('Texts from Ambuda') }}</h2>
+{{ text_list(texts_with_project, _('Search for a text title')) }}
+{% endif %}
+
+{% if texts_without_project %}
+<h2 class="font-bold text-xl mt-10 mb-2">{{ _('Texts from external sources') }}</h2>
+{{ text_list(texts_without_project, _('Search for a text title')) }}
+{% endif %}
+
 {% else %}
 <div class="prose">
   <p>{{ _('No texts have been published yet.') }}</p>

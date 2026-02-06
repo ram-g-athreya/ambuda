@@ -9,7 +9,6 @@
 {% block content %}
 {% set url = url_for('user.summary', username=user.username) %}
 
-{{ components.flash_messages() }}
 {{ m.nested_header('Bookmarks', user.username, url) }}
 
 {{ m.user_tabs(user=user, active='bookmarks', is_mod=current_user.is_moderator) }}

@@ -1,6 +1,8 @@
 """Publishing routes for converting proofing projects into published texts."""
 
 import dataclasses as dc
+import difflib
+import hashlib
 import re
 import tempfile
 from datetime import UTC, datetime
@@ -11,6 +13,7 @@ from xml.etree import ElementTree as ET
 from slugify import slugify
 from flask import (
     Blueprint,
+    current_app,
     flash,
     render_template,
     request,
@@ -34,6 +37,7 @@ from ambuda.models.proofing import (
 from ambuda.models.texts import TextStatus
 from ambuda.utils import diff as diff_utils
 from ambuda.utils import project_utils
+from ambuda.utils.s3 import S3Path
 from ambuda.views.proofing.decorators import p2_required
 
 
@@ -51,6 +55,58 @@ def _validate_slug(slug: str) -> str | None:
     if "--" in slug:
         return f"Invalid slug '{slug}': consecutive dashes are not allowed."
     return None
+
+
+def _align_sequences(
+    old_items: list, new_items: list, *, key=None
+) -> list[tuple[int | None, int | None]]:
+    """Align two sequences to minimize the total diff.
+
+    Uses SequenceMatcher (LCS-based) to find an optimal alignment between
+    the old and new sequences.  Within ``replace`` regions the items are
+    paired positionally; excess items become pure inserts or deletes.
+
+    Args:
+        old_items: The old sequence.
+        new_items: The new sequence.
+        key: Optional callable to extract a comparison key from each item.
+             When *None*, items are compared directly.
+
+    Returns:
+        List of ``(old_index | None, new_index | None)`` pairs.  Both
+        indices are set for matched or changed items; only one is set for
+        pure insertions or deletions.
+    """
+    if key:
+        old_keys = [key(item) for item in old_items]
+        new_keys = [key(item) for item in new_items]
+    else:
+        old_keys = list(old_items)
+        new_keys = list(new_items)
+
+    matcher = difflib.SequenceMatcher(a=old_keys, b=new_keys, autojunk=False)
+    pairs: list[tuple[int | None, int | None]] = []
+    for op, a0, a1, b0, b1 in matcher.get_opcodes():
+        if op == "equal":
+            for i, j in zip(range(a0, a1), range(b0, b1)):
+                pairs.append((i, j))
+        elif op == "replace":
+            a_len = a1 - a0
+            b_len = b1 - b0
+            common = min(a_len, b_len)
+            for k in range(common):
+                pairs.append((a0 + k, b0 + k))
+            for k in range(common, a_len):
+                pairs.append((a0 + k, None))
+            for k in range(common, b_len):
+                pairs.append((None, b0 + k))
+        elif op == "delete":
+            for i in range(a0, a1):
+                pairs.append((i, None))
+        elif op == "insert":
+            for j in range(b0, b1):
+                pairs.append((None, j))
+    return pairs
 
 
 bp = Blueprint("publish", __name__)
@@ -199,11 +255,13 @@ def preview(project_slug, text_slug):
         document = publishing_utils.parse_tei_document(Path(fp.name))
     new_blocks = [b.xml for section in document.sections for b in section.blocks]
 
+    old_xmls = [b.xml for b in existing_blocks]
+    alignment = _align_sequences(old_xmls, new_blocks)
+
     diffs = []
-    max_len = max(len(new_blocks), len(existing_blocks))
-    for i in range(max_len):
-        old_xml = existing_blocks[i].xml if i < len(existing_blocks) else None
-        new_xml = new_blocks[i] if i < len(new_blocks) else None
+    for old_idx, new_idx in alignment:
+        old_xml = old_xmls[old_idx] if old_idx is not None else None
+        new_xml = new_blocks[new_idx] if new_idx is not None else None
 
         if old_xml is None and new_xml is not None:
             x = ET.fromstring(new_xml)
@@ -300,6 +358,20 @@ def create(project_slug, text_slug):
                 header = ET.tostring(elem, encoding="unicode")
                 break
 
+        # Upload TEI XML to S3
+        tei_path = Path(fp.name)
+        tei_size = tei_path.stat().st_size
+        sha256_hash = hashlib.sha256()
+        with open(tei_path, "rb") as hash_f:
+            for chunk in iter(lambda: hash_f.read(4096), b""):
+                sha256_hash.update(chunk)
+        tei_checksum = sha256_hash.hexdigest()
+
+        export_slug = f"{config.slug}.xml"
+        bucket = current_app.config["S3_BUCKET"]
+        tei_s3 = S3Path(bucket, f"text-exports/{export_slug}")
+        tei_s3.upload_file(tei_path)
+
     text = q.text(config.slug)
     is_new_text = False
     if not text:
@@ -354,7 +426,6 @@ def create(project_slug, text_slug):
     section_map = {s.slug: s for s in text.sections}
 
     if existing_sections != doc_sections:
-        # TODO: align existing and new sections to minimize diff thrash, keep alignment.
         new_sections = doc_sections - existing_sections
         old_sections = existing_sections - doc_sections
 
@@ -379,69 +450,53 @@ def create(project_slug, text_slug):
 
         session.flush()
 
-    existing_blocks = {
-        b.slug
-        for b in session.execute(
-            sqla.select(db.TextBlock).where(db.TextBlock.text_id == text.id)
+    existing_blocks_list = (
+        session.execute(
+            sqla.select(db.TextBlock)
+            .where(db.TextBlock.text_id == text.id)
+            .order_by(db.TextBlock.n)
         )
         .scalars()
         .all()
-    }
-    doc_blocks = {b.slug for s in document_data.sections for b in s.blocks}
+    )
 
-    if existing_blocks != doc_blocks:
-        old_blocks = existing_blocks - doc_blocks
-        new_blocks = doc_blocks - existing_blocks
-
-        if old_blocks:
-            session.execute(
-                sqla.delete(db.TextBlock).where(
-                    db.TextBlock.text_id == text.id,
-                    db.TextBlock.slug.in_(old_blocks),
-                )
-            )
-
-        existing_blocks = existing_blocks - old_blocks
-    else:
-        new_blocks = set()
-
-    existing_blocks_map = {}
-    if existing_blocks:
-        existing_blocks_list = (
-            session.execute(
-                sqla.select(db.TextBlock).where(
-                    db.TextBlock.text_id == text.id,
-                    db.TextBlock.slug.in_(existing_blocks),
-                )
-            )
-            .scalars()
-            .all()
-        )
-        existing_blocks_map = {b.slug: b for b in existing_blocks_list}
-
-    block_index = 0
+    new_doc_blocks = []
+    block_sections = []
     for doc_section in document_data.sections:
         section = section_map[doc_section.slug]
-
         for block in doc_section.blocks:
-            block_index += 1
+            new_doc_blocks.append(block)
+            block_sections.append(section)
 
-            if block.slug in existing_blocks_map:
-                existing_block = existing_blocks_map[block.slug]
-                existing_block.xml = block.xml
-                existing_block.n = block_index
-                existing_block.section_id = section.id
-                existing_block.page_id = block.page_id
-            elif block.slug in new_blocks:
-                new_block = db.TextBlock(
-                    text_id=text.id,
-                    section_id=section.id,
-                    slug=block.slug,
-                    xml=block.xml,
-                    n=block_index,
-                    page_id=block.page_id,
-                )
-                session.add(new_block)
+    old_xmls = [b.xml for b in existing_blocks_list]
+    new_xmls = [b.xml for b in new_doc_blocks]
+    alignment = _align_sequences(old_xmls, new_xmls)
+
+    block_index = 0
+    for old_idx, new_idx in alignment:
+        if old_idx is not None and new_idx is not None:
+            block_index += 1
+            existing_block = existing_blocks_list[old_idx]
+            doc_block = new_doc_blocks[new_idx]
+            existing_block.slug = doc_block.slug
+            existing_block.xml = doc_block.xml
+            existing_block.n = block_index
+            existing_block.section_id = block_sections[new_idx].id
+            existing_block.page_id = doc_block.page_id
+        elif old_idx is not None:
+            session.delete(existing_blocks_list[old_idx])
+        else:
+            block_index += 1
+            doc_block = new_doc_blocks[new_idx]
+            new_block = db.TextBlock(
+                text_id=text.id,
+                section_id=block_sections[new_idx].id,
+                slug=doc_block.slug,
+                xml=doc_block.xml,
+                n=block_index,
+                page_id=doc_block.page_id,
+            )
+            session.add(new_block)
 
     texts_map[config.slug] = text
     if is_new_text:
@@ -501,6 +556,24 @@ def create(project_slug, text_slug):
                             child_id=child_block.id,
                         )
                     )
+
+    # Create or update the XML export record
+    text_export = q.text_export(export_slug)
+    if text_export:
+        text_export.s3_path = tei_s3.path
+        text_export.size = tei_size
+        text_export.sha256_checksum = tei_checksum
+        text_export.updated_at = datetime.now(UTC)
+    else:
+        text_export = db.TextExport(
+            text_id=text.id,
+            slug=export_slug,
+            export_type="xml",
+            s3_path=tei_s3.path,
+            size=tei_size,
+            sha256_checksum=tei_checksum,
+        )
+        session.add(text_export)
 
     session.commit()
 

@@ -237,8 +237,12 @@ export default () => ({
   autoStructureMatchStage: true,
   autoStructureMatchSpeaker: true,
   autoStructureMatchChaya: true,
+  // Split pane ratio (percentage of the first/text pane)
+  splitPercent: 50,
   // Track bounding box: auto-scroll image to show current bounding box
   trackBoundingBox: false,
+  // If true, invert the colors of the page image
+  invertImageColors: false,
   // OCR bounding box highlighting
   boundingBoxes: [],
   boundingBoxLines: [],
@@ -396,6 +400,8 @@ export default () => ({
         this.showAdvancedOptions = settings.showAdvancedOptions || this.showAdvancedOptions;
 
         this.trackBoundingBox = settings.trackBoundingBox || false;
+        this.invertImageColors = settings.invertImageColors || false;
+        this.splitPercent = settings.splitPercent || 50;
 
         // Normalize preferences (default to true if not set)
         this.normalizeReplaceColonVisarga = settings.normalizeReplaceColonVisarga !== undefined
@@ -424,9 +430,11 @@ export default () => ({
       toScript: this.toScript,
       showAdvancedOptions: this.showAdvancedOptions,
       trackBoundingBox: this.trackBoundingBox,
+      invertImageColors: this.invertImageColors,
       normalizeReplaceColonVisarga: this.normalizeReplaceColonVisarga,
       normalizeReplaceSAvagraha: this.normalizeReplaceSAvagraha,
       normalizeReplaceDoublePipe: this.normalizeReplaceDoublePipe,
+      splitPercent: this.splitPercent,
     };
     localStorage.setItem(CONFIG_KEY, JSON.stringify(settings));
   },
@@ -536,6 +544,48 @@ export default () => ({
   displayImageOnTop() { this.setLayout(ImageLayout.Top); },
   displayImageOnBottom() { this.setLayout(ImageLayout.Bottom); },
 
+  isHorizontalLayout() {
+    return this.layout === ImageLayout.Left || this.layout === ImageLayout.Right;
+  },
+
+  isReversedLayout() {
+    return this.layout === ImageLayout.Left || this.layout === ImageLayout.Top;
+  },
+
+  startResize() {
+    const container = this.$refs.splitContainer;
+    const horizontal = this.isHorizontalLayout();
+    const reversed = this.isReversedLayout();
+
+    const onMouseMove = (ev) => {
+      const rect = container.getBoundingClientRect();
+      let percent = horizontal
+        ? ((ev.clientX - rect.left) / rect.width) * 100
+        : ((ev.clientY - rect.top) / rect.height) * 100;
+      if (reversed) percent = 100 - percent;
+      if (Math.abs(percent - 50) < 2) percent = 50;
+      this.splitPercent = Math.max(10, Math.min(90, percent));
+    };
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      this.saveSettings();
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+    document.body.style.cursor = horizontal ? 'col-resize' : 'row-resize';
+    document.body.style.userSelect = 'none';
+  },
+
+  resetSplit() {
+    this.splitPercent = 50;
+    this.saveSettings();
+  },
+
   displayView(viewMode) {
     // Already showing -- just return.
     if (this.viewMode === viewMode) return;
@@ -576,6 +626,11 @@ export default () => ({
 
   toggleTrackBoundingBox() {
     this.trackBoundingBox = !this.trackBoundingBox;
+    this.saveSettings();
+  },
+
+  toggleInvertImageColors() {
+    this.invertImageColors = !this.invertImageColors;
     this.saveSettings();
   },
 

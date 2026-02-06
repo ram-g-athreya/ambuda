@@ -1,17 +1,15 @@
-{% extends 'proofing/base-sidebar.html' %}
+{% extends 'proofing/base.html' %}
+{% import "macros/components.html" as mc %}
 {% import "macros/proofing.html" as m %}
 {% import "macros/proofing-talk.html" as m_talk %}
-{% from "macros/forms.html" import field %}
 
 
-{% block title %}Talk | Ambuda{% endblock %}
-
-
-{% block sidebar %}{{ m.main_nav('talk', current_user=current_user) }}{% endblock %}
+{% block title %}{{ mc.title(_('Talk')) }}{% endblock %}
 
 
 {% block content %}
-{{ m.title_and_subtitle(_('Talk'), 'Recent discussion across all projects') }}
+{{ m.header(_('Talk')) }}
+{{ m.proofing_tabs('talk', current_user) }}
 
 {% for project, thread in all_threads %}
   {% set project_url = url_for('proofing.project.summary', slug=project.slug) %}
@@ -22,14 +20,13 @@
       <a href="{{ thread_url }}">{{ thread.title }}</a>
       <p class="text-sm text-slate-400">
         <a href="{{ project_url }}">{{ project.display_title }}</a>
-        | Created by <a href="{{ author_url }}">{{ thread.author.username }}</a>
+        | {{ _('Created by') }} <a href="{{ author_url }}">{{ thread.author.username }}</a>
       </p>
     </div>
     <p class="text-sm">{{ thread.updated_at|time_ago }}</p>
   </li>
 {% else %}
-<p>There isn't any ongoing discussion yet. To start a discussion, go to the
-project you want to discuss and click on its <kbd>Talk</kbd> tab.</p>
+<p class="text-slate-500">{{ _("There isn't any ongoing discussion yet. To start a discussion, go to the project you want to discuss and click on its Talk tab.") }}</p>
 {% endfor %}
 
 {% endblock %}

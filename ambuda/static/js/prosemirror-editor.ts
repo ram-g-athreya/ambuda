@@ -453,6 +453,8 @@ class BlockView {
     this.contentDOM.className = 'pm-content-dom';
     if (blockType === 'ignore') {
       this.contentDOM.classList.add('bg-gray-100', 'text-gray-500');
+    } else if (blockType === 'metadata') {
+      this.contentDOM.classList.add('pm-metadata');
     }
   }
 

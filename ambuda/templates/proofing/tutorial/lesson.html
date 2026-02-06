@@ -1,0 +1,128 @@
+{% extends 'header-main-footer.html' %}
+
+
+{% block title %}{{ _('Tutorial: %(title)s', title=lesson.title) }} | Ambuda{% endblock %}
+
+{% block header %}{% endblock %}
+{% block footer %}{% endblock %}
+
+{% block main %}
+<style>
+  [x-cloak] { display: none !important; }
+  .split-handle {
+    position: relative;
+    flex-shrink: 0;
+    z-index: 1;
+    box-sizing: content-box;
+    background: #cbd5e1;
+    background-clip: content-box;
+  }
+  .split-handle-h { width: 1px; padding: 0 4px; margin: 0 -4px; cursor: col-resize; }
+  .split-handle-v { height: 1px; padding: 4px 0; margin: -4px 0; cursor: row-resize; }
+  .split-handle::after {
+    content: '';
+    position: absolute;
+    background: #94a3b8;
+    border-radius: 9999px;
+    opacity: 0;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+  }
+  .split-handle:hover::after { opacity: 1; }
+  .split-handle-h::after { width: 5px; height: 32px; }
+  .split-handle-v::after { height: 5px; width: 32px; }
+</style>
+
+<div id="editor-loading" class="h-screen flex items-center justify-center bg-slate-50">
+  <div class="text-center">
+    <div class="text-lg text-slate-600 mb-2">{{ _('Loading editor...') }}</div>
+    <div class="text-sm text-slate-400">{{ _('Please wait') }}</div>
+  </div>
+</div>
+
+<div class="h-screen flex flex-col overflow-hidden"
+     x-data="tutorialProofer"
+     x-init="document.getElementById('editor-loading').style.display = 'none'"
+     x-cloak>
+
+  {# Top bar #}
+  <nav class="bg-slate-900 text-white text-sm flex justify-between items-center px-4 py-2">
+    <div class="flex items-center gap-4">
+      <a href="{{ url_for('proofing.tutorial.index') }}" class="hover:underline">&larr; {{ _('Tutorial') }}</a>
+      <span class="text-slate-400">|</span>
+      <span class="font-bold">{{ _('Lesson %(num)s', num=lesson.id) }}: {{ lesson.title }}</span>
+    </div>
+    <div class="flex items-center gap-3">
+      {% if prev_id %}
+      <a href="{{ url_for('proofing.tutorial.lesson', lesson_id=prev_id) }}"
+         class="px-2 py-1 rounded hover:bg-slate-700">&larr; {{ _('Prev') }}</a>
+      {% endif %}
+      {% if next_id %}
+      <a href="{{ url_for('proofing.tutorial.lesson', lesson_id=next_id) }}"
+         class="px-2 py-1 rounded hover:bg-slate-700">{{ _('Next') }} &rarr;</a>
+      {% endif %}
+      <button type="button"
+              class="btn btn-submit px-3 py-1.5"
+              @click="checkAnswer">
+        {{ _('Check Answer') }}
+      </button>
+    </div>
+  </nav>
+
+  {# Description bar #}
+  <div class="bg-slate-100 border-b px-4 py-3 text-sm">
+    <div x-data="{ expanded: true }">
+      <button @click="expanded = !expanded" class="font-bold text-slate-700 hover:underline">
+        <span x-show="expanded">&#x25BE;</span>
+        <span x-show="!expanded">&#x25B8;</span>
+        {{ _('Instructions') }}
+      </button>
+      <div x-show="expanded" class="mt-2 text-slate-600 prose prose-sm max-w-none">
+        {% block lesson_description %}{% endblock %}
+      </div>
+    </div>
+  </div>
+
+  {# Feedback banner #}
+  <div x-show="showFeedback" x-cloak
+       :class="isCorrect ? 'bg-green-100 border-green-300 text-green-800' : 'bg-red-100 border-red-300 text-red-800'"
+       class="border-b px-4 py-2 text-sm flex justify-between items-center">
+    <span x-text="feedbackMessage"></span>
+    <button type="button" class="font-bold ml-4" @click="showFeedback = false">&times;</button>
+  </div>
+
+  {# Editor + image split pane #}
+  <div class="flex flex-row flex-1 min-h-0" x-ref="splitContainer">
+    <div :style="'flex: ' + splitPercent + ' 1 0%'" class="flex flex-col min-h-0 overflow-hidden">
+      <div class="border border-r-slate-400 flex flex-col min-h-0 h-full">
+        <div class="p-2 md:p-4 flex-1 min-h-0 overflow-y-scroll">
+          <div id="prosemirror-editor" class="prosemirror-editor"></div>
+        </div>
+      </div>
+    </div>
+    <div class="split-handle split-handle-h"
+         @mousedown.prevent="startResize()"
+         @dblclick="resetSplit()"></div>
+    <div :style="'flex: ' + (100 - splitPercent) + ' 1 0%'" class="flex flex-col min-h-0 overflow-hidden">
+      <div class="flex flex-col min-h-0 h-full border bg-slate-100">
+        {% if lesson.image_url %}
+        <div id="osd-image" class="flex-1 min-h-0"></div>
+        {% else %}
+        <div class="flex-1 min-h-0 flex items-center justify-center text-slate-400 text-sm">
+          {{ _('No reference image for this lesson.') }}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if lesson.image_url %}
+<script src="https://cdn.jsdelivr.net/npm/openseadragon@3.1/build/openseadragon/openseadragon.min.js"></script>
+{% endif %}
+<script type="text/javascript">
+const TUTORIAL_INITIAL_CONTENT = {% block lesson_initial_content %}"<page>\n<p></p>\n</page>"{% endblock %};
+const TUTORIAL_IMAGE_URL = {{ lesson.image_url|tojson|safe }};
+const TUTORIAL_LESSON_ID = {{ lesson.id|tojson|safe }};
+</script>
+{% endblock %}

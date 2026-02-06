@@ -1,0 +1,27 @@
+{% extends 'proofing/base.html' %}
+
+
+{% block title %}{{ _('Proofing Tutorial') }} | Ambuda{% endblock %}
+
+
+{% block content %}
+<div class="prose">
+  <h1>{{ _('P1 tutorial') }}</h1>
+</div>
+
+<div class="mt-8 space-y-4">
+  {% for lesson in lessons %}
+  <a href="{{ url_for('proofing.tutorial.lesson', lesson_id=lesson.id) }}"
+     class="block border rounded-lg p-4 hover:bg-slate-50 transition">
+    <div class="flex items-center justify-between">
+      <div>
+        <h2 class="text-lg font-bold">
+          {{ _('Lesson %(num)s', num=lesson.id) }}: {{ lesson.title }}
+        </h2>
+        <p class="text-sm text-slate-500 mt-1">{{ lesson.summary }}</p>
+      </div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% endblock %}

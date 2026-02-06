@@ -2,22 +2,15 @@
 
 import json
 import os
-from xml.etree import ElementTree as ET
 
-from defusedxml import ElementTree as DET
 from flask import (
     Blueprint,
-    Response,
     abort,
-    jsonify,
-    request,
+    current_app,
     render_template,
     url_for,
     send_file,
 )
-from flask import current_app
-from flask_login import current_user, login_required
-from sqlalchemy import select
 from vidyut.lipi import transliterate, Scheme
 
 import ambuda.database as db
@@ -29,21 +22,11 @@ from ambuda.utils.text_exports import ExportType, EXPORTS
 from ambuda.utils import xml
 from ambuda.utils.json_serde import AmbudaJSONEncoder
 from ambuda.utils.text_validation import validate
-from ambuda.views.api import bp as api
 from ambuda.views.reader.schema import Block, Section
 from ambuda.utils.s3 import S3Path
+from sqlalchemy import exists, orm, select
 
 bp = Blueprint("texts", __name__)
-
-# A hacky list that decides which texts have parse data.
-HAS_NO_PARSE = {
-    "raghuvamsham",
-    "bhattikavyam",
-    "shatakatrayam",
-    "shishupalavadham",
-    "shivopanishat",
-    "catuhshloki",
-}
 
 #: A special slug for single-section texts.
 #:
@@ -143,19 +126,11 @@ def text_about(slug):
         abort(404)
     assert text
 
-    try:
-        header_xml = DET.fromstring(text.header)
-        ET.indent(header_xml, space="  ", level=0)
-        header_text = ET.tostring(header_xml, encoding="unicode")
-    except Exception:
-        header_text = ""
-
     header_data = xml.parse_tei_header(text.header)
     return render_template(
         "texts/text-about.html",
         text=text,
         header=header_data,
-        raw_header=header_text,
     )
 
 
@@ -258,25 +233,25 @@ def section(text_slug, section_slug):
         if section_slug != SINGLE_SECTION_SLUG:
             abort(404)
 
-    has_no_parse = text_.slug in HAS_NO_PARSE
+    session = q.get_session()
+    has_no_parse = not session.scalar(
+        select(exists().where(db.BlockParse.text_id == text_.id))
+    )
 
-    # Fetch with content blocks
-    cur = q.text_section(text_.id, section_slug)
-
-    # TODO: this sucks
-    with q.get_session() as _:
-        _ = cur.blocks
-        for block in cur.blocks:
-            _ = block.page
-            if block.page:
-                _ = block.page.project
-            # Eagerly load parent relationships if this is a child text
-            if text_.parent_id:
-                _ = block.parents
-                for parent_block in block.parents:
-                    _ = parent_block.page
-                    if parent_block.page:
-                        _ = parent_block.page.project
+    # Fetch section with eager-loaded blocks and relationships
+    block_load = orm.selectinload(db.TextSection.blocks)
+    page_load = block_load.selectinload(db.TextBlock.page).selectinload(db.Page.project)
+    parent_load = (
+        block_load.selectinload(db.TextBlock.parents)
+        .selectinload(db.TextBlock.page)
+        .selectinload(db.Page.project)
+    )
+    stmt = (
+        select(db.TextSection)
+        .filter_by(text_id=text_.id, slug=section_slug)
+        .options(block_load, page_load, parent_load)
+    )
+    cur = session.scalars(stmt).first()
 
     blocks = []
     for block in cur.blocks:
@@ -343,90 +318,3 @@ def section(text_slug, section_slug):
         has_no_parse=has_no_parse,
         is_single_section_text=is_single_section_text,
     )
-
-
-@api.route("/texts/<text_slug>/blocks/<block_slug>")
-def block_htmx(text_slug, block_slug):
-    text = q.text(text_slug)
-    if text is None:
-        abort(404)
-    assert text
-
-    block = q.block(text.id, block_slug)
-    if not block:
-        abort(404)
-    assert block
-
-    html_block = xml.transform_text_block(block.xml)
-    return render_template(
-        "htmx/text-block.html",
-        slug=block.slug,
-        html=html_block,
-    )
-
-
-@api.route("/texts/<text_slug>/<section_slug>")
-def reader_json(text_slug, section_slug):
-    # NOTE: currently unused, since we bootstrap from a JSON blob in the
-    # original request.
-    text_ = q.text(text_slug)
-    if text_ is None:
-        abort(404)
-    assert text_
-
-    try:
-        prev, cur, next_ = _prev_cur_next(text_.sections, section_slug)
-    except ValueError:
-        abort(404)
-
-    with q.get_session() as _:
-        html_blocks = [xml.transform_text_block(b.xml) for b in cur.blocks]
-
-    data = Section(
-        text_title=_hk_to_dev(text_.title),
-        section_title=_hk_to_dev(cur.title),
-        blocks=html_blocks,
-        prev_url=_make_section_url(text, prev),
-        next_url=_make_section_url(text, next_),
-    )
-    return jsonify(data)
-
-
-@api.route("/bookmarks/toggle", methods=["POST"])
-def toggle_bookmark():
-    """Toggle a bookmark on a text block."""
-
-    if not current_user.is_authenticated:
-        return jsonify({"error": "Authentication required"}), 401
-
-    data = request.get_json()
-    block_slug = data.get("block_slug")
-
-    if not block_slug:
-        return jsonify({"error": "block_slug is required"}), 400
-
-    session = q.get_session()
-
-    block = session.scalar(select(db.TextBlock).where(db.TextBlock.slug == block_slug))
-    if not block:
-        return jsonify({"error": "Block not found"}), 404
-
-    existing_bookmark = session.scalar(
-        select(db.TextBlockBookmark).where(
-            db.TextBlockBookmark.user_id == current_user.id,
-            db.TextBlockBookmark.block_id == block.id,
-        )
-    )
-
-    if existing_bookmark:
-        session.delete(existing_bookmark)
-        session.commit()
-        return jsonify({"bookmarked": False, "block_slug": block_slug})
-    else:
-        bookmark = db.TextBlockBookmark(
-            user_id=current_user.id,
-            block_id=block.id,
-        )
-        session.add(bookmark)
-        session.commit()
-        return jsonify({"bookmarked": True, "block_slug": block_slug})

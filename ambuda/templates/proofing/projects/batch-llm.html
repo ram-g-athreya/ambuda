@@ -1,0 +1,114 @@
+{% extends 'proofing/base-sidebar.html' %}
+{% import "macros/components.html" as components %}
+{% import "macros/proofing.html" as m %}
+
+
+{% block title %}Batch LLM: {{ project.display_title }} | Ambuda{% endblock %}
+
+
+{% block sidebar %}{{ m.main_nav('projects', current_user=current_user) }}{% endblock %}
+
+
+{% block content %}
+{{ components.flash_messages() }}
+
+{{ m.project_header_nested('Batch LLM', project) }}
+{{ m.project_tabs(project=project, active='edit') }}
+
+<div class="prose">
+  <p>Run an LLM prompt over a range of pages. Results are stored as suggestions for review.</p>
+</div>
+
+<script>
+const PRESET_PROMPTS = {{ preset_prompts|tojson }};
+const BATCH_LLM_URL = '{{ url_for('proofing.project.batch_llm', slug=project.slug) }}';
+</script>
+
+<div class="mt-4" x-data="{
+  preset: 'structuring',
+  customPrompt: '',
+  pageStart: 1,
+  pageEnd: {{ total_pages }},
+  submitting: false,
+  errorMsg: '',
+  get activePrompt() {
+    if (this.preset === 'custom') return this.customPrompt;
+    const p = PRESET_PROMPTS[this.preset];
+    return p ? p.template : '';
+  },
+  async submit() {
+    this.submitting = true;
+    this.errorMsg = '';
+    const payload = {
+      page_start: this.pageStart,
+      page_end: this.pageEnd,
+    };
+    if (this.preset === 'custom') {
+      payload.custom_prompt = this.customPrompt;
+    } else {
+      payload.prompt = this.preset;
+    }
+    try {
+      const response = await fetch(BATCH_LLM_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json();
+      if (response.ok && data.redirect) {
+        window.location.href = data.redirect;
+      } else {
+        this.errorMsg = data.error || 'Failed to start batch LLM.';
+        this.submitting = false;
+      }
+    } catch (e) {
+      this.errorMsg = 'Request failed.';
+      this.submitting = false;
+    }
+  }
+}">
+  <div class="space-y-4 max-w-lg">
+    <div>
+      <label class="block text-sm font-medium text-slate-700 mb-1">{{ _('Prompt') }}</label>
+      <select class="w-full p-2 border border-slate-300 rounded bg-white" x-model="preset">
+        {% for key, prompt in preset_prompts.items() %}
+        <option value="{{ key }}">{{ prompt.label }}</option>
+        {% endfor %}
+        <option value="custom">Custom prompt</option>
+      </select>
+    </div>
+
+    <div x-show="preset === 'custom'" x-cloak>
+      <label class="block text-sm font-medium text-slate-700 mb-1">{{ _('Custom prompt') }}</label>
+      <textarea class="w-full p-2 border border-slate-300 rounded h-48 text-sm font-mono"
+                x-model="customPrompt"
+                placeholder="Use {content} where page text should be inserted."></textarea>
+      <p class="text-xs text-slate-500 mt-1">{{ _('Must contain {content} placeholder.') }}</p>
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium text-slate-700 mb-1">{{ _('Prompt preview') }}</label>
+      <pre class="w-full p-3 border border-slate-300 rounded bg-slate-50 text-xs font-mono whitespace-pre-wrap max-h-64 overflow-y-auto" x-text="activePrompt"></pre>
+    </div>
+
+    <div class="flex gap-4">
+      <div class="flex-1">
+        <label class="block text-sm font-medium text-slate-700 mb-1">{{ _('Start page') }}</label>
+        <input type="number" min="1" max="{{ total_pages }}"
+               class="w-full p-2 border border-slate-300 rounded" x-model.number="pageStart">
+      </div>
+      <div class="flex-1">
+        <label class="block text-sm font-medium text-slate-700 mb-1">{{ _('End page') }}</label>
+        <input type="number" min="1" max="{{ total_pages }}"
+               class="w-full p-2 border border-slate-300 rounded" x-model.number="pageEnd">
+      </div>
+    </div>
+
+    <div x-show="errorMsg" class="text-red-600 text-sm" x-text="errorMsg"></div>
+
+    <button class="btn btn-submit" @click="submit" :disabled="submitting"
+            x-text="submitting ? '{{ _('Starting...') }}' : '{{ _('Run Batch LLM') }}'">
+    </button>
+  </div>
+</div>
+{% endblock %}

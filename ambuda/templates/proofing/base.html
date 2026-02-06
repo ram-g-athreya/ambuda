@@ -1,5 +1,7 @@
 {% extends 'header-main-footer.html' %}
 
+{% import "macros/components.html" as components %}
+
 
 {% block meta_description -%}
 A state-of-the-art Sanskrit proofreading platform with best-in-class OCR. Join today!
@@ -15,6 +17,7 @@ A state-of-the-art Sanskrit proofreading platform with best-in-class OCR. Join t
 
 {% block main %}
 <article class="p-4 xl:p-0 max-w-4xl mx-auto mb-24">
+{{ components.flash_messages() }}
 {% block content %}{% endblock %}
 </article>
 {% endblock %}

@@ -62,13 +62,34 @@
 
 {% block title %}Edit: {{ project.display_title }}/{{ cur.slug }} | Ambuda{% endblock %}
 
-<style>
-  [x-cloak] { display: none !important; }
-</style>
-
 {% block header %}{% endblock %}
 {% block footer %}{% endblock %}
 {% block main %}
+<style>
+  [x-cloak] { display: none !important; }
+  .split-handle {
+    position: relative;
+    flex-shrink: 0;
+    z-index: 1;
+    box-sizing: content-box;
+    background: #cbd5e1;
+    background-clip: content-box;
+  }
+  .split-handle-h { width: 1px; padding: 0 4px; margin: 0 -4px; cursor: col-resize; }
+  .split-handle-v { height: 1px; padding: 4px 0; margin: -4px 0; cursor: row-resize; }
+  .split-handle::after {
+    content: '';
+    position: absolute;
+    background: #94a3b8;
+    border-radius: 9999px;
+    opacity: 0;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+  }
+  .split-handle:hover::after { opacity: 1; }
+  .split-handle-h::after { width: 5px; height: 32px; }
+  .split-handle-v::after { height: 5px; width: 32px; }
+</style>
 {# Loading overlay shown while Alpine.js initializes #}
 <div id="editor-loading" class="h-screen flex items-center justify-center bg-slate-50">
   <div class="text-center">
@@ -126,6 +147,13 @@
         {{ _dropdown_item('displayVisualView', _('Switch to visual editor')) }}
         {{ _dropdown_item('displayXMLView', _('Switch to XML editor')) }}
         {{ _dropdown_separator() }}
+        <li>
+          <button class="dropdown-item" @click.prevent="toggleInvertImageColors">
+            <span x-show="invertImageColors" class="inline-block w-4">&#x2713;</span>
+            <span x-show="!invertImageColors" class="inline-block w-4"></span>
+            {{ _('Invert image colors') }}
+          </button>
+        </li>
         <li>
           <button class="dropdown-item" @click.prevent="toggleTrackBoundingBox">
             <span x-show="trackBoundingBox" class="inline-block w-4">&#x2713;</span>
@@ -368,8 +396,8 @@
     <input type="hidden" name="status" value="{{ form.status.data }}">
     <input type="hidden" name="explanation" value="">
 
-    <div :class="layoutClasses" class="flex-1 min-h-0">
-      <div class="flex-1 flex flex-col min-h-0">
+    <div :class="layoutClasses" class="flex-1 min-h-0" x-ref="splitContainer">
+      <div :style="'flex: ' + splitPercent + ' 1 0%'" class="flex flex-col min-h-0 overflow-hidden">
         <div class="border border-r-slate-400 flex flex-col min-h-0 h-full">
           <div class="p-2 md:p-4 flex-1 min-h-0 overflow-y-scroll">
             <div id="prosemirror-editor" class="prosemirror-editor"></div>
@@ -377,9 +405,13 @@
           </div>
         </div>
       </div>
-      <div class="flex-1 flex flex-col min-h-0">
+      <div class="split-handle"
+           :class="isHorizontalLayout() ? 'split-handle-h' : 'split-handle-v'"
+           @mousedown.prevent="startResize()"
+           @dblclick="resetSplit()"></div>
+      <div :style="'flex: ' + (100 - splitPercent) + ' 1 0%'" class="flex flex-col min-h-0 overflow-hidden">
         <div class="flex flex-col min-h-0 h-full border bg-slate-100">
-          <div id="osd-image" class="flex-1 min-h-0">
+          <div id="osd-image" class="flex-1 min-h-0" :style="invertImageColors ? 'filter: invert(1)' : ''">
           </div>
         </div>
       </div>

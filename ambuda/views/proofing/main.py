@@ -5,7 +5,9 @@ from datetime import datetime, timedelta, UTC
 import uuid
 from pathlib import Path
 
-from flask import Blueprint, current_app, flash, render_template
+from xml.etree import ElementTree as ET
+
+from flask import Blueprint, current_app, flash, make_response, render_template, url_for
 from flask_login import current_user
 from flask_wtf import FlaskForm
 from slugify import slugify
@@ -123,22 +125,34 @@ def index():
         SitePageStatus.SKIP: "bg-slate-100",
     }
 
+    load_opts = orm.load_only(
+        db.Project.id,
+        db.Project.display_title,
+        db.Project.slug,
+        db.Project.created_at,
+        db.Project.description,
+    )
+
     # Only load the columns we need for the template
     projects = list(
         session.scalars(
             select(db.Project)
             .filter(db.Project.status == ProjectStatus.ACTIVE)
-            .options(
-                orm.load_only(
-                    db.Project.id,
-                    db.Project.display_title,
-                    db.Project.slug,
-                    db.Project.created_at,
-                    db.Project.description,
-                )
-            )
+            .options(load_opts)
         ).all()
     )
+
+    # Include pending projects as a separate list for p2 users
+    pending_projects = []
+    if current_user.is_authenticated and current_user.is_p2:
+        pending_projects = list(
+            session.scalars(
+                select(db.Project)
+                .filter(db.Project.status == ProjectStatus.PENDING)
+                .options(load_opts)
+            ).all()
+        )
+        pending_projects.sort(key=lambda x: x.display_title)
 
     # Only calculate stats for active projects to avoid wasting time on inactive ones
     active_project_ids = [p.id for p in projects]
@@ -147,6 +161,7 @@ def index():
         return render_template(
             "proofing/index.html",
             projects=[],
+            pending_projects=pending_projects,
             statuses_per_project={},
             progress_per_project={},
             pages_per_project={},
@@ -198,16 +213,11 @@ def index():
     return render_template(
         "proofing/index.html",
         projects=projects,
+        pending_projects=pending_projects,
         statuses_per_project=statuses_per_project,
         progress_per_project=progress_per_project,
         pages_per_project=pages_per_project,
     )
-
-
-@bp.route("/help/beginners-guide")
-def beginners_guide():
-    """[deprecated] Display our minimal proofing guidelines."""
-    return render_template("proofing/beginners-guide.html")
 
 
 @bp.route("/help/complete-guide")
@@ -326,12 +336,8 @@ def create_project_status(task_id):
     )
 
 
-@bp.route("/recent-changes")
-def recent_changes():
-    """Show recent changes across all projects."""
-    num_per_page = 100
-
-    # Exclude bot edits, which overwhelm all other edits on the site.
+def _get_recent_activity(num_per_page: int):
+    """Return a list of (kind, timestamp, object) tuples for recent activity."""
     bot_user = q.user(consts.BOT_USERNAME)
     assert bot_user, "Bot user not defined"
 
@@ -364,7 +370,13 @@ def recent_changes():
     recent_activity += [("project", p.created_at, p) for p in recent_projects]
 
     recent_activity.sort(key=lambda x: x[1], reverse=True)
-    recent_activity = recent_activity[:num_per_page]
+    return recent_activity[:num_per_page]
+
+
+@bp.route("/recent-changes")
+def recent_changes():
+    """Show recent changes across all projects."""
+    recent_activity = _get_recent_activity(num_per_page=100)
     return render_template(
         "proofing/recent-changes.html", recent_activity=recent_activity
     )
@@ -381,21 +393,6 @@ def talk():
     return render_template("proofing/talk.html", all_threads=all_threads)
 
 
-@bp.route("/documents")
-def documents():
-    """List all pending proofing projects."""
-    from ambuda.models.proofing import ProjectStatus
-
-    session = q.get_session()
-    projects = list(
-        session.scalars(
-            select(db.Project).filter(db.Project.status == ProjectStatus.PENDING)
-        ).all()
-    )
-    projects.sort(key=lambda x: x.display_title)
-    return render_template("proofing/documents.html", projects=projects)
-
-
 @bp.route("/texts")
 def texts():
     """List all published texts."""
@@ -410,9 +407,15 @@ def texts():
         )
         .order_by(db.Text.created_at.desc())
     )
-    texts = list(session.scalars(stmt).all())
+    all_texts = list(session.scalars(stmt).all())
+    texts_with_project = [t for t in all_texts if t.project]
+    texts_without_project = [t for t in all_texts if not t.project]
 
-    return render_template("proofing/texts.html", texts=texts)
+    return render_template(
+        "proofing/texts.html",
+        texts_with_project=texts_with_project,
+        texts_without_project=texts_without_project,
+    )
 
 
 @bp.route("/admin/dashboard/")

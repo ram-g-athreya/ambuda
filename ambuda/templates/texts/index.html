@@ -17,7 +17,12 @@ analysis and integrated dictionary support for a variety of Sanskrit works.
 
 
 {% block main %}
-<article class="p-4 md:p-0 max-w-3xl mx-auto md:my-24 md:mb-36">
+<article class="p-4 md:p-0 max-w-3xl mx-auto md:my-24 md:mb-36" x-data="textSearch">
+  <div class="my-4">
+    <input type="text" x-model="query" @input="filter"
+           placeholder="{{ _('Search for a text ...') }}"
+           class="w-full p-2 rounded border text-sm">
+  </div>
   {{ m_texts.grouped_texts(grouped_entries) }}
 </article>
 {% endblock %}

@@ -2,6 +2,8 @@
 
 from google import genai
 
+GEMINI_MODEL = "gemini-3-flash-preview"
+
 
 DEFAULT_STRUCTURING_PROMPT = """You are a highly specialized text structuring assistant. Your task
 is to analyze the provided raw text page and add appropriate structural markup using specific XML
@@ -69,6 +71,89 @@ def run(
 
     client = genai.Client(api_key=api_key)
     prompt = prompt_template.format(content=content)
-    response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+    response = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
 
     return response.text
+
+
+BATCH_DELIMITER_START = "===PAGE_START {slug}==="
+BATCH_DELIMITER_END = "===PAGE_END {slug}==="
+
+BATCH_WRAPPER = """You will process multiple pages. Each page is delimited below.
+Apply the instructions to EACH page independently and return the results using the
+EXACT same delimiters.
+
+For each page, return:
+===PAGE_START <slug>===
+<your structured output for that page>
+===PAGE_END <slug>===
+
+Do NOT include any text outside of these delimiters.
+
+INSTRUCTIONS:
+{instructions}
+
+PAGES TO PROCESS:
+{pages}"""
+
+
+def run_batch(
+    pages: dict[str, str],
+    api_key: str,
+    prompt_template: str = DEFAULT_STRUCTURING_PROMPT,
+) -> dict[str, str]:
+    """Run the LLM over multiple pages in a single API call.
+
+    Args:
+        pages: mapping of page slug to page content.
+        api_key: Gemini API key.
+        prompt_template: the per-page prompt template (must contain {content}).
+
+    Returns:
+        mapping of page slug to LLM output.
+    """
+    if not pages:
+        raise ValueError("No pages provided")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY not configured")
+
+    # Build the combined input: instructions + all pages with delimiters.
+    # Strip the {content} placeholder from the template to get just the instructions.
+    instructions = prompt_template.replace("{content}", "<page content appears here>")
+
+    page_sections = []
+    for slug, content in pages.items():
+        page_sections.append(
+            f"{BATCH_DELIMITER_START.format(slug=slug)}\n"
+            f"{content}\n"
+            f"{BATCH_DELIMITER_END.format(slug=slug)}"
+        )
+
+    prompt = BATCH_WRAPPER.format(
+        instructions=instructions,
+        pages="\n\n".join(page_sections),
+    )
+
+    client = genai.Client(api_key=api_key)
+    response = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
+
+    return _parse_batch_response(response.text, set(pages.keys()))
+
+
+def _parse_batch_response(
+    response_text: str, expected_slugs: set[str]
+) -> dict[str, str]:
+    """Parse delimited multi-page LLM output back into per-page results."""
+    import re
+
+    results = {}
+    pattern = re.compile(
+        r"===PAGE_START\s+(\S+?)===\s*\n(.*?)\n\s*===PAGE_END\s+\1===",
+        re.DOTALL,
+    )
+    for match in pattern.finditer(response_text):
+        slug = match.group(1)
+        content = match.group(2).strip()
+        results[slug] = content
+
+    return results

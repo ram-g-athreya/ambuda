@@ -16,7 +16,9 @@ from ambuda.utils.text_exports import (
     create_xml_file,
     create_plain_text,
     create_pdf,
+    create_epub,
     maybe_create_tokens,
+    create_vocab_list,
 )
 from pydantic import BaseModel
 
@@ -87,10 +89,14 @@ def create_text_export_inner(
                     xml_path,
                     export_config.scheme,
                 )
+            elif export_config.type == ExportType.EPUB:
+                create_epub(text, output_path)
             elif export_config.type == ExportType.TOKENS:
                 maybe_create_tokens(text, output_path)
+            elif export_config.type == ExportType.VOCAB:
+                create_vocab_list(text, output_path)
             else:
-                raise ValueError(f"Unknown export type: {export_key}")
+                raise ValueError(f"Unsupported export type: {export_key}")
 
             if not output_path.exists():
                 logging.info(f"Did not create {output_path} (no data found)")

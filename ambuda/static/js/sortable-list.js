@@ -1,3 +1,5 @@
+import { createSearchMatcher } from './sanskrit-search';
+
 function sortAscending(field) {
   return (a, b) => (a.dataset[field] < b.dataset[field] ? -1 : 1);
 }
@@ -29,27 +31,20 @@ export default (defaultField) => ({
     const { list } = this.$refs;
     this.data = [...list.children].map((x) => ({
       key: x.dataset.key,
-      // Store title in lowercase to support case-insensitive searching
-      title: x.dataset.title.toLowerCase(),
+      title: x.dataset.title,
     }));
-    // Collect all keys in `this.displayed`.
-    this.displayed = new Set([...list.children].map((x) => x.dataset.key));
+    this.matcher = createSearchMatcher(this.data, (x) => x.title);
+    this.displayed = new Set(this.data.map((x) => x.key));
   },
 
   /** Filter the list by the user's query string. */
   filter() {
     if (!this.query) {
-      // Reset to show all items when query is empty
       this.displayed = new Set(this.data.map((x) => x.key));
       return;
     }
-
-    const query = this.query.toLowerCase();
-    // toLowerCase for case-insensitive matching.
-    const newKeys = this.data
-      .filter((x) => x.title.includes(query))
-      .map((x) => x.key);
-    this.displayed = new Set(newKeys);
+    const matches = this.matcher.filter(this.query);
+    this.displayed = new Set(matches.map((x) => x.key));
   },
 
   /** Sort the filtered list by field `this.field` in order `this.order`. */

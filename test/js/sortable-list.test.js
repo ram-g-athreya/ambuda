@@ -26,9 +26,9 @@ test('SortableList can be created', () => {
   expect(s.order).toBe('asc');
   expect(s.displayed).toEqual(new Set(["a", "b", "c"]))
   expect(s.data).toEqual([
-    { key: "a", title: "title a" },
-    { key: "b", title: "title b" },
-    { key: "c", title: "title c" },
+    { key: "a", title: "Title A" },
+    { key: "b", title: "Title B" },
+    { key: "c", title: "Title C" },
   ]);
 
   const results = getText(s.$refs.list);

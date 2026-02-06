@@ -32,6 +32,7 @@ app = Celery(
         "ambuda.tasks.ocr",
         "ambuda.tasks.tagging",
         "ambuda.tasks.text_exports",
+        "ambuda.tasks.batch_llm",
     ],
 )
 app.conf.update(

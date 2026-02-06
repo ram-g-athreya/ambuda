@@ -1,0 +1,14 @@
+{% extends 'proofing/tutorial/lesson.html' %}
+
+
+{% block lesson_description %}
+{% endblock %}
+
+
+{% block lesson_initial_content %}
+{%- set xml -%}
+<page>
+</page>
+{%- endset -%}
+{{ xml|tojson|safe }}
+{% endblock %}

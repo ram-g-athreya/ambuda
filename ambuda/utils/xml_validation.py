@@ -36,29 +36,39 @@ class InlineType(StrEnum):
 
 
 class TEITag(StrEnum):
+    # Structure
     TITLE = "title"
     HEAD = "head"
     TRAILER = "trailer"
 
+    # Blocks
     LG = "lg"
     L = "l"
     P = "p"
 
+    # Drama
     SP = "sp"
     STAGE = "stage"
     SPEAKER = "speaker"
 
+    # Errors
     CHOICE = "choice"
     SEG = "seg"
     SIC = "sic"
     CORR = "corr"
+    UNCLEAR = "unclear"
     SUPPLIED = "supplied"
 
-    REF = "ref"
-    NOTE = "note"
-    PB = "pb"
+    # Editor annotations
     ADD = "add"
     ELLIPSIS = "ellipsis"
+
+    # References
+    REF = "ref"
+    NOTE = "note"
+
+    # Page divisions
+    PB = "pb"
 
 
 @dc.dataclass
@@ -129,7 +139,16 @@ PROOFING_XML_VALIDATION_SPEC = {
 # - `stage` in `seg` ??? `choice` in `seg` ?
 XML_LANG = "{http://www.w3.org/XML/1998/namespace}lang"
 XML_ID = "{http://www.w3.org/XML/1998/namespace}id"
-INLINE_TEXT = {"choice", "ref", "supplied", "note", "pb", "add", "ellipsis"}
+INLINE_TEXT = {
+    TEITag.CHOICE,
+    TEITag.REF,
+    TEITag.SUPPLIED,
+    TEITag.NOTE,
+    TEITag.PB,
+    TEITag.ADD,
+    TEITag.ELLIPSIS,
+    TEITag.UNCLEAR,
+}
 TEI_XML_VALIDATION_SPEC = {
     TEITag.SP: ValidationSpec(
         children={TEITag.SPEAKER, TEITag.P, TEITag.LG, TEITag.STAGE, "note"},
@@ -140,16 +159,7 @@ TEI_XML_VALIDATION_SPEC = {
     TEITag.LG: ValidationSpec(children={"l", "note", "pb"}, attrib={"n"}),
     TEITag.L: ValidationSpec(children=INLINE_TEXT, attrib=set()),
     TEITag.P: ValidationSpec(
-        children={
-            "note",
-            "choice",
-            "ref",
-            TEITag.STAGE,
-            "pb",
-            "supplied",
-            "add",
-            "ellipsis",
-        },
+        children=INLINE_TEXT | {TEITag.STAGE},
         attrib={"n"},
     ),
     TEITag.CHOICE: ValidationSpec(
@@ -167,7 +177,37 @@ TEI_XML_VALIDATION_SPEC = {
     TEITag.SUPPLIED: ValidationSpec(),
     TEITag.ADD: ValidationSpec(),
     TEITag.ELLIPSIS: ValidationSpec(),
+    TEITag.UNCLEAR: ValidationSpec(),
 }
+
+
+METADATA_FIELDS = {"speaker", "div.title", "div.n"}
+
+
+def validate_metadata(text: str) -> list[ValidationResult]:
+    """Validate metadata block content (one key=value pair per line)."""
+    results = []
+    for i, line in enumerate(text.splitlines(), 1):
+        line = line.strip()
+        if not line:
+            continue
+        if "=" not in line:
+            results.append(
+                ValidationResult.error(
+                    f"Metadata line {i}: expected 'key=value' format, got '{line}'"
+                )
+            )
+            continue
+        key, _, _ = line.partition("=")
+        key = key.strip()
+        if key not in METADATA_FIELDS:
+            results.append(
+                ValidationResult.error(
+                    f"Metadata line {i}: unknown field '{key}'"
+                    f" (allowed: {', '.join(sorted(METADATA_FIELDS))})"
+                )
+            )
+    return results
 
 
 def validate_xml(
@@ -222,7 +262,13 @@ def validate_proofing_xml(content: str) -> list[ValidationResult]:
     if root.tag != "page":
         return [ValidationResult.error(f"Root tag must be 'page', got '{root.tag}'")]
 
-    return validate_xml(root, PROOFING_XML_VALIDATION_SPEC)
+    results = validate_xml(root, PROOFING_XML_VALIDATION_SPEC)
+
+    for child in root:
+        if child.tag == BlockType.METADATA:
+            results.extend(validate_metadata(child.text or ""))
+
+    return results
 
 
 def validate_tei_xml(xml: ET.Element) -> list[ValidationResult]:

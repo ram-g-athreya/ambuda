@@ -3,31 +3,24 @@
 {% import "macros/components.html" as mc %}
 
 
-{% block title %}Suggestions | Ambuda{% endblock %}
+{% block title %}{{ mc.title(_('Suggestions')) }}{% endblock %}
 
 
 {% block content %}
 
+{{ m.header(_('Suggestions')) }}
 {{ m.proofing_tabs('suggestions', current_user) }}
-
-<h1 class="text-2xl font-bold mb-4">{{ _('Suggestions') }}</h1>
 
 <div class="flex gap-2 mb-6">
   <a href="{{ url_for('proofing.suggestions.index', status='pending') }}"
      class="px-3 py-1 rounded text-sm {% if status_filter == 'pending' %}bg-sky-900 text-white{% else %}bg-slate-200 text-slate-700 hover:bg-slate-300{% endif %}">
     {{ _('Pending') }}
   </a>
-  <a href="{{ url_for('proofing.suggestions.index', status='accepted') }}"
-     class="px-3 py-1 rounded text-sm {% if status_filter == 'accepted' %}bg-green-700 text-white{% else %}bg-slate-200 text-slate-700 hover:bg-slate-300{% endif %}">
-    {{ _('Accepted') }}
-  </a>
-  <a href="{{ url_for('proofing.suggestions.index', status='rejected') }}"
-     class="px-3 py-1 rounded text-sm {% if status_filter == 'rejected' %}bg-red-700 text-white{% else %}bg-slate-200 text-slate-700 hover:bg-slate-300{% endif %}">
-    {{ _('Rejected') }}
+  <a href="{{ url_for('proofing.suggestions.index', status='complete') }}"
+     class="px-3 py-1 rounded text-sm {% if status_filter == 'complete' %}bg-sky-900 text-white{% else %}bg-slate-200 text-slate-700 hover:bg-slate-300{% endif %}">
+    {{ _('Complete') }}
   </a>
 </div>
-
-{{ mc.flash_messages() }}
 
 {% if not suggestions %}
 <p class="text-slate-500">{{ _('No suggestions found.') }}</p>
@@ -69,22 +62,16 @@
 
     {% if s.status == 'pending' %}
     <div class="flex gap-2">
-      <form method="POST" action="{{ url_for('proofing.suggestions.accept', id=s.id) }}">
-        <button type="submit" class="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700"
-                {% if s._is_stale %}title="{{ _('This suggestion is based on an outdated revision') }}"{% endif %}>
-          {{ _('Accept') }}
-        </button>
-      </form>
-      <form method="POST" action="{{ url_for('proofing.suggestions.reject', id=s.id) }}">
-        <button type="submit" class="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700">
-          {{ _('Reject') }}
-        </button>
-      </form>
+      <a href="{{ url_for('proofing.suggestions.review', id=s.id) }}"
+         class="px-3 py-1 bg-sky-900 text-white text-sm rounded hover:bg-sky-700">
+        {{ _('Review') }}
+      </a>
     </div>
     {% else %}
-    <span class="text-sm {% if s.status == 'accepted' %}text-green-700{% else %}text-red-700{% endif %}">
-      {{ s.status|capitalize }}
-    </span>
+    <a href="{{ url_for('proofing.suggestions.review', id=s.id) }}"
+       class="px-3 py-1 text-sm rounded bg-slate-600 text-white hover:bg-slate-700">
+      {{ _('View') }}
+    </a>
     {% endif %}
   </div>
   {% endfor %}

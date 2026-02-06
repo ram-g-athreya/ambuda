@@ -9,6 +9,8 @@ import Reader from './reader';
 import Proofer from './proofer';
 import PublishConfig from './publish-config';
 import SortableList from './sortable-list';
+import TextSearch from './library-search';
+import Tutorial from './tutorial';
 
 window.addEventListener('alpine:init', () => {
   Alpine.data('dictionary', Dictionary);
@@ -18,6 +20,8 @@ window.addEventListener('alpine:init', () => {
   Alpine.data('proofer', Proofer);
   Alpine.data('publishConfig', PublishConfig);
   Alpine.data('sortableList', SortableList);
+  Alpine.data('textSearch', TextSearch);
+  Alpine.data('tutorialProofer', Tutorial);
 });
 
 (() => {

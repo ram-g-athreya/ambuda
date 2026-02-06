@@ -2,6 +2,7 @@ import dataclasses as dc
 import json
 import logging
 import re
+import uuid
 from datetime import UTC, datetime
 from xml.etree import ElementTree as ET
 
@@ -38,9 +39,11 @@ from ambuda import queries as q
 from ambuda.enums import SitePageStatus
 from ambuda.models.proofing import ProjectStatus
 from ambuda.tasks import app as celery_app
+from ambuda.tasks import batch_llm as batch_llm_tasks
 from ambuda.tasks import llm_structuring as llm_structuring_tasks
 from ambuda.tasks import ocr as ocr_tasks
-from ambuda.utils import project_utils, proofing_utils, project_structuring
+from ambuda.utils import project_utils, project_structuring
+from ambuda.utils.llm_prompts import PRESET_PROMPTS
 from ambuda.utils.project_structuring import ProofBlock, ProofPage, ProofProject
 from ambuda.utils.revisions import add_revision
 from ambuda.views.proofing.decorators import moderator_required, p2_required
@@ -200,6 +203,15 @@ def summary(slug):
     session = q.get_session()
     stmt = (
         sqla.select(db.Revision)
+        .options(
+            orm.defer(db.Revision.content),
+            orm.selectinload(db.Revision.author).load_only(db.User.username),
+            orm.selectinload(db.Revision.page).load_only(db.Page.slug),
+            orm.selectinload(db.Revision.project).load_only(
+                db.Project.slug, db.Project.display_title
+            ),
+            orm.selectinload(db.Revision.status).load_only(db.PageStatus.name),
+        )
         .filter_by(project_id=project_.id)
         .order_by(db.Revision.created_at.desc())
         .limit(10)
@@ -227,7 +239,15 @@ def activity(slug):
     session = q.get_session()
     stmt = (
         sqla.select(db.Revision)
-        .options(orm.defer(db.Revision.content))
+        .options(
+            orm.defer(db.Revision.content),
+            orm.selectinload(db.Revision.author).load_only(db.User.username),
+            orm.selectinload(db.Revision.page).load_only(db.Page.slug),
+            orm.selectinload(db.Revision.project).load_only(
+                db.Project.slug, db.Project.display_title
+            ),
+            orm.selectinload(db.Revision.status).load_only(db.PageStatus.name),
+        )
         .filter_by(project_id=project_.id)
         .order_by(db.Revision.created_at.desc())
         .limit(100)
@@ -304,13 +324,53 @@ def download_as_text(slug):
     if project_ is None:
         abort(404)
 
-    content_blobs = [
-        p.revisions[-1].content if p.revisions else "" for p in project_.pages
+    pages = [
+        ProofPage.from_content_and_page_id(
+            p.revisions[-1].content if p.revisions else "", p.id
+        )
+        for p in project_.pages
     ]
-    raw_text = proofing_utils.to_plain_text(content_blobs)
+    raw_text = project_structuring.to_plain_text(pages)
 
     response = make_response(raw_text, 200)
     response.mimetype = "text/plain"
+    return response
+
+
+@bp.route("/<slug>/download/epub")
+def download_as_epub(slug):
+    """Download the project as EPUB."""
+    import io
+    import tempfile
+    from pathlib import Path
+
+    from ambuda.utils.text_exports import create_epub
+
+    project_ = q.project(slug)
+    if project_ is None:
+        abort(404)
+
+    assert project_
+
+    # If the project has a published text, use the standard export path.
+    text = next(iter(project_.texts), None) if project_.texts else None
+    if text is None:
+        abort(404)
+
+    with tempfile.NamedTemporaryFile(suffix=".epub", delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+
+    try:
+        create_epub(text, tmp_path)
+        epub_bytes = tmp_path.read_bytes()
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    response = make_response(epub_bytes, 200)
+    response.headers["Content-Type"] = "application/epub+zip"
+    response.headers["Content-Disposition"] = (
+        f'attachment; filename="{project_.slug}.epub"'
+    )
     return response
 
 
@@ -326,18 +386,13 @@ def download_as_xml(slug):
         abort(404)
 
     assert project_
-    project_meta = {
-        "title": project_.display_title,
-        "author": project_.author,
-        "publication_year": project_.publication_year,
-        "publisher": project_.publisher,
-        "editor": project_.editor,
-    }
-    project_meta = {k: v or "TODO" for k, v in project_meta.items()}
-    content_blobs = [
-        p.revisions[-1].content if p.revisions else "" for p in project_.pages
+    pages = [
+        ProofPage.from_content_and_page_id(
+            p.revisions[-1].content if p.revisions else "", p.id
+        )
+        for p in project_.pages
     ]
-    xml_blob = proofing_utils.to_tei_xml(project_meta, content_blobs)
+    xml_blob = project_structuring.to_tei_xml(pages)
 
     response = make_response(xml_blob, 200)
     response.mimetype = "text/xml"
@@ -654,7 +709,6 @@ def parse_content(slug):
 
 
 @bp.route("/<slug>/batch-llm-structuring", methods=["GET", "POST"])
-@moderator_required
 def batch_llm_structuring(slug):
     project_ = q.project(slug)
     if project_ is None:
@@ -720,6 +774,135 @@ def batch_llm_structuring_status(task_id):
 
     return render_template(
         "include/llm-structuring-progress.html",
+        **data,
+    )
+
+
+@bp.route("/<slug>/batch-llm", methods=["GET", "POST"])
+@p2_required
+def batch_llm(slug):
+    """Run a batch LLM prompt over a range of pages, storing results as suggestions."""
+    project_ = q.project(slug)
+    if project_ is None:
+        abort(404)
+
+    assert project_
+    if request.method == "GET":
+        return render_template(
+            "proofing/projects/batch-llm.html",
+            project=project_,
+            total_pages=len(project_.pages),
+            preset_prompts=PRESET_PROMPTS,
+        )
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No JSON data provided"}), 400
+
+    prompt_key = data.get("prompt")
+    custom_prompt = data.get("custom_prompt")
+    page_start = data.get("page_start")
+    page_end = data.get("page_end")
+
+    if not page_start or not page_end:
+        return jsonify({"error": "page_start and page_end are required"}), 400
+
+    # Resolve prompt template
+    if prompt_key and prompt_key in PRESET_PROMPTS:
+        prompt_template = PRESET_PROMPTS[prompt_key]["template"]
+    elif custom_prompt:
+        if "{content}" not in custom_prompt:
+            return jsonify(
+                {"error": "Custom prompt must contain {content} placeholder"}
+            ), 400
+        prompt_template = custom_prompt
+    else:
+        return jsonify({"error": "A valid preset or custom prompt is required"}), 400
+
+    # Find the order range from start/end page slugs
+    start_slug = str(page_start)
+    end_slug = str(page_end)
+    start_order = None
+    end_order = None
+    for p in project_.pages:
+        if p.slug == start_slug:
+            start_order = p.order
+        if p.slug == end_slug:
+            end_order = p.order
+
+    if start_order is None or end_order is None:
+        return jsonify({"error": "Invalid page range"}), 400
+
+    # Filter pages within the order range that have content
+    page_slugs = [
+        p.slug
+        for p in project_.pages
+        if start_order <= p.order <= end_order and p.version > 0
+    ]
+
+    if not page_slugs:
+        return jsonify({"error": "No edited pages found in the given range"}), 400
+
+    batch_id = str(uuid.uuid4())
+    task = batch_llm_tasks.run_batch_llm_for_project(
+        app_env=current_app.config["AMBUDA_ENVIRONMENT"],
+        project=project_,
+        prompt_template=prompt_template,
+        page_slugs=page_slugs,
+        batch_id=batch_id,
+    )
+
+    if task:
+        redirect_url = url_for(
+            "proofing.project.batch_llm_progress", slug=slug, task_id=task.id
+        )
+        return jsonify({"redirect": redirect_url})
+    else:
+        return jsonify({"error": "Failed to start batch LLM task"}), 500
+
+
+@bp.route("/<slug>/batch-llm-progress/<task_id>")
+@p2_required
+def batch_llm_progress(slug, task_id):
+    """Show the progress page for a batch LLM run."""
+    project_ = q.project(slug)
+    if project_ is None:
+        abort(404)
+
+    return render_template(
+        "proofing/projects/batch-llm-progress.html",
+        project=project_,
+        task_id=task_id,
+        status="PENDING",
+    )
+
+
+@bp.route("/batch-llm-status/<task_id>")
+def batch_llm_status(task_id):
+    """Poll the status of a batch LLM task."""
+    from celery.result import AsyncResult
+
+    r = AsyncResult(task_id, app=celery_app)
+    state = r.state  # PENDING, STARTED, SUCCESS, FAILURE, etc.
+
+    if state == "SUCCESS":
+        result = r.result or {}
+        data = {
+            "status": "SUCCESS",
+            "created": result.get("created", 0),
+            "skipped": result.get("skipped", 0),
+            "total": result.get("total", 0),
+        }
+    elif state == "FAILURE":
+        data = {"status": "FAILURE", "error": str(r.result)}
+    elif state == "PENDING":
+        data = {"status": "PENDING"}
+    else:
+        # STARTED or any other active state
+        data = {"status": "PROGRESS"}
+
+    return render_template(
+        "include/batch-llm-progress.html",
         **data,
     )
 

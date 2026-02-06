@@ -1,6 +1,8 @@
 """Utilities for exporting texts in various formats."""
 
 import csv
+import io
+
 import logging
 import tempfile
 from enum import StrEnum
@@ -8,8 +10,10 @@ from functools import cached_property
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+from ebooklib import epub
 from lxml import etree
 from pydantic import BaseModel
+from sqlalchemy import func as sqla_func
 from sqlalchemy.orm import object_session
 from vidyut.lipi import transliterate, Scheme
 
@@ -28,7 +32,9 @@ class ExportType(StrEnum):
     XML = "xml"
     PLAIN_TEXT = "plain-text"
     PDF = "pdf"
+    EPUB = "epub"
     TOKENS = "tokens"
+    VOCAB = "vocab"
 
 
 class ExportScheme(StrEnum):
@@ -105,9 +111,21 @@ EXPORTS = [
         for scheme in ExportScheme
     ],
     ExportConfig(
+        label="EPUB",
+        type=ExportType.EPUB,
+        slug_pattern="{}.epub",
+        mime_type="application/epub+zip",
+    ),
+    ExportConfig(
         label="Token data (CSV)",
         type=ExportType.TOKENS,
         slug_pattern="{}-tokens.csv",
+        mime_type="text/csv",
+    ),
+    ExportConfig(
+        label="Vocabulary list (CSV)",
+        type=ExportType.VOCAB,
+        slug_pattern="{}-vocab.csv",
         mime_type="text/csv",
     ),
 ]
@@ -264,8 +282,6 @@ def create_plain_text(text: db.Text, file_path: Path, xml_path: Path) -> None:
                     f.write("\n\n")
                 is_first = False
 
-                f.write(f"# {slug}\n")
-
                 elem_str = etree.tostring(elem, encoding="unicode")
                 xml = ET.fromstring(elem_str)
                 for el in xml.iter():
@@ -398,3 +414,87 @@ def maybe_create_tokens(text: db.Text, out_path: Path) -> None:
 
     if not has_data:
         out_path.unlink()
+
+
+def create_epub(text: db.Text, out_path: Path) -> None:
+    """Create an EPUB file from the given text."""
+
+    book = epub.EpubBook()
+    book.set_identifier(f"ambuda-{text.slug}")
+    book.set_title(text.title)
+    book.set_language(text.language or "sa")
+
+    session = object_session(text)
+    assert session
+
+    ns = "{http://www.tei-c.org/ns/1.0}"
+    safe_parser = etree.XMLParser(resolve_entities=False, load_dtd=False)
+    body_parts = []
+    for section in text.sections:
+        for block in section.blocks:
+            try:
+                el = etree.fromstring(block.xml, safe_parser)
+            except Exception:
+                continue
+
+            tag = el.tag.replace(ns, "")
+            if tag == "lg":
+                lines = [l.text or "" for l in el.findall(f".//{ns}l")]
+                if not lines:
+                    lines = [l.text or "" for l in el.findall(".//l")]
+                body_parts.append(
+                    "<div class='verse'>" + "<br/>".join(lines) + "</div>"
+                )
+            elif tag == "note":
+                content = etree.tostring(el, encoding="unicode", method="text")
+                body_parts.append(f"<p class='footnote'>{content}</p>")
+            else:
+                content = etree.tostring(el, encoding="unicode", method="text")
+                body_parts.append(f"<p>{' '.join(content.split())}</p>")
+
+        session.expire(section)
+
+    chapter = epub.EpubHtml(
+        title=text.title, file_name="content.xhtml", lang=text.language or "sa"
+    )
+    chapter.content = (
+        f"<html><head><title>{text.title}</title></head>"
+        f"<body>{''.join(body_parts)}</body></html>"
+    )
+    book.add_item(chapter)
+
+    book.toc = [chapter]
+    book.spine = ["nav", chapter]
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+
+    buf = io.BytesIO()
+    epub.write_epub(buf, book)
+    out_path.write_bytes(buf.getvalue())
+
+
+def create_vocab_list(text: db.Text, out_path: Path) -> None:
+    session = object_session(text)
+    assert session
+
+    results = (
+        session.query(
+            db.Token.base,
+            sqla_func.count(sqla_func.distinct(db.Token.block_id)).label("block_count"),
+            sqla_func.count().label("total_count"),
+        )
+        .join(db.TextBlock, db.Token.block_id == db.TextBlock.id)
+        .filter(db.TextBlock.text_id == text.id)
+        .group_by(db.Token.base)
+        .order_by(sqla_func.count().desc())
+        .all()
+    )
+
+    if not results:
+        return
+
+    with open(out_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["base", "block_count", "total_count"])
+        for base, block_count, total_count in results:
+            writer.writerow([base, block_count, total_count])

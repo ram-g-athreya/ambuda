@@ -10,6 +10,7 @@ dependencies = [
     "celery==5.5.3",
     "defusedxml>=0.7.1",
     "dharmamitra-sanskrit-grammar>=0.1.7",
+    "ebooklib>=0.20",
     "email-validator==1.2.1",
     "flask==3.0.0",
     "flask-babel==4.0.0",

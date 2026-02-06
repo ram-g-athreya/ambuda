@@ -50,7 +50,7 @@
 {% macro all_texts(text_entries) %}
 <ul>
 {% for entry in text_entries %}
-<li class="even:bg-slate-50 p-2">
+<li class="even:bg-slate-50 p-2" data-title="{{ entry.text.title }}">
   <h2 class="flex justify-between">
     <span>
       {% set url = url_for('texts.text', slug=entry.text.slug) %}
@@ -93,8 +93,10 @@
   {{ i.i_exclamation_circle() }}
   {% for heading, entries in grouped_entries.items() %}
     {% if entries %}
-    <h2 class="text-slate-400 font-bold text-3xl my-8">{{ heading }}</h2>
-    {{ all_texts(entries) }}
+    <div data-section>
+      <h2 class="text-slate-400 font-bold text-3xl my-8">{{ heading }}</h2>
+      {{ all_texts(entries) }}
+    </div>
     {% endif %}
   {% endfor %}
 {% endmacro %}

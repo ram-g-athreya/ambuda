@@ -41,6 +41,30 @@ def _create_markup(tag: str, s: str) -> tuple[Markup, Markup, Markup]:
     )
 
 
+def revision_diff_ops(old: str, new: str) -> list[dict]:
+    """Return a structured list of diff operations between *old* and *new*.
+
+    Each element is a dict with keys ``op`` (one of ``"equal"``,
+    ``"insert"``, ``"delete"``, ``"replace"``), ``old``, and ``new``.
+    """
+    matcher = difflib.SequenceMatcher(a=_split_graphemes(old), b=_split_graphemes(new))
+    ops: list[dict] = []
+    for opcode, a0, a1, b0, b1 in matcher.get_opcodes():
+        old_text = matcher.a[a0:a1]
+        new_text = matcher.b[b0:b1]
+        if opcode == "equal":
+            ops.append({"op": "equal", "old": old_text, "new": new_text})
+        elif opcode == "insert":
+            ops.append({"op": "insert", "old": "", "new": new_text})
+        elif opcode == "delete":
+            ops.append({"op": "delete", "old": old_text, "new": ""})
+        elif opcode == "replace":
+            ops.append({"op": "replace", "old": old_text, "new": new_text})
+        else:
+            raise RuntimeError(f"Unexpected opcode {opcode}")
+    return ops
+
+
 def revision_diff(old: str, new: str) -> str:
     """Generate a diff from old and new strings, wrapping
     additions / removals in HTML tags."""

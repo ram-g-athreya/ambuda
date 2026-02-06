@@ -22,46 +22,15 @@
 
 
 {% block content %}
-<div class="mb-4">
-  <div class="flex justify-between items-baseline mb-2">
-    <div class="prose">
-      <h1 class="md:!mt-0">{{ _('Projects') }}</h1>
-    </div>
-    {% if current_user.is_p2 %}
-    <a href="{{ url_for('proofing.create_project') }}"
-      class="btn px-4 py-2 bg-sky-900 text-white hover:bg-white hover:text-sky-900 transition font-semibold rounded shadow">
-      {{ _('Create project') }}
-    </a>
-    {% endif %}
-  </div>
-
-  {{ m.proofing_tabs('projects', current_user) }}
-
-  <div class="flex gap-4 text-sm mb-4">
-    <a href="{{ url_for('proofing.recent_changes') }}" class="text-sky-900 hover:underline">{{ _('Recent changes') }} &rarr;</a>
-  </div>
-</div>
+{{ m.header(_('Projects')) }}
+{{ m.proofing_tabs('projects', current_user) }}
 
 {% if projects %}
 {{ status_legend() }}
 
 <div x-data="sortableList('title')">
 
-<form class="border p-2 bg-slate-100 rounded text-sm flex items-center"
-    x-cloak @submit.prevent>
-  <input type="text" placeholder="Search for a project title" x-model="query"
-     class="p-1 rounded border flex-1 mr-4" @keyup="filter"></input>
-  <label class="text-slate-500 mr-2">{{ _('Sort by:') }}</label>
-  <select class="bg-white mr-2 p-1" x-model="field" @change="sort">
-    <option value="title" selected>{{ _('Title') }}</option> 
-    <option value="created">{{ _('Creation date') }}</option> 
-    <option value="progress">{{ _('Progress') }}</option> 
-  </select>
-  <select class="bg-white p-1" x-model="order" @change="sort">
-    <option value="asc" selected>{{ _('Ascending') }}</option> 
-    <option value="desc">{{ _('Descending') }}</option> 
-  </select>
-</form>
+{{ m.list_toolbar(_('Search for a project title'), [('title', _('Title')), ('created', _('Creation date')), ('progress', _('Progress'))]) }}
 
 <ul x-ref="list">
   {% for p in projects %}
@@ -95,8 +64,35 @@
 </div>
 {% else %}
 <div class="prose">
-<p>There aren't any ongoing projects. <a href="{{ url_for('proofing.create_project') }}">
-    Create a new project to get started</a>.</p>
+<p>{% trans create_url=url_for('proofing.create_project') %}There aren't any ongoing projects. <a href="{{ create_url }}">Create a new project to get started</a>.{% endtrans %}</p>
+</div>
+{% endif %}
+
+{% if pending_projects %}
+<h2 class="font-bold text-xl mt-10 mb-2">{{ _('Pending') }}</h2>
+
+<div x-data="sortableList('title')">
+
+{{ m.list_toolbar(_('Search for a pending project'), [('title', _('Title')), ('created', _('Creation date'))]) }}
+
+<ul x-ref="list">
+  {% for p in pending_projects %}
+  <li data-key="{{ p.id }}"
+      data-title="{{ p.display_title }}"
+      data-created="{{ p.created_at }}"
+      x-show="displayed.has('{{ p.id }}')"
+      class="py-3 border-b border-gray-200">
+    <div class="flex justify-between items-center">
+      <a href="{{ url_for("proofing.project.summary", slug=p.slug) }}" class="text-sky-900 hover:underline font-medium">
+        {{ p.display_title }}
+      </a>
+      <span class="text-xs px-2 py-1 rounded bg-yellow-100 text-yellow-800">
+        {{ _('Pending') }}
+      </span>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
 </div>
 {% endif %}
 

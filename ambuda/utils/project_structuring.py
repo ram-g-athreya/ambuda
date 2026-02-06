@@ -339,6 +339,51 @@ class ProofProject:
         return ProofProject(pages=pages)
 
 
+def to_plain_text(pages: list[ProofPage]) -> str:
+    """Export pages as plain text."""
+    parts = []
+    for page in pages:
+        for block in page.blocks:
+            if block.type == "ignore":
+                continue
+            if block.type == "verse":
+                parts.append(block.content)
+            elif block.type == "footnote":
+                prefix = f"[^{block.mark}] " if block.mark else ""
+                parts.append(prefix + block.content)
+            else:
+                # Join paragraph lines into flowing text
+                parts.append(" ".join(block.content.split()))
+    return "\n\n".join(parts)
+
+
+def to_tei_xml(pages: list[ProofPage]) -> str:
+    """Export pages as TEI XML."""
+    buf = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<TEI xmlns="http://www.tei-c.org/ns/1.0">',
+        "<text>",
+        "<body>",
+    ]
+    for i, page in enumerate(pages):
+        buf.append(f'<pb n="{i + 1}" />')
+        for block in page.blocks:
+            if block.type == "ignore":
+                continue
+            elif block.type == "verse":
+                lines = [
+                    line.strip() for line in block.content.split("\n") if line.strip()
+                ]
+                lg_lines = "\n".join(f"  <l>{line}</l>" for line in lines)
+                buf.append(f"<lg>\n{lg_lines}\n</lg>")
+            elif block.type == "footnote":
+                buf.append(f"<note>{block.content}</note>")
+            else:
+                buf.append(f"<p>{block.content}</p>")
+    buf.extend(["</body>", "</text>", "</TEI>"])
+    return "\n".join(buf)
+
+
 def detect_language(text: str) -> str:
     """Detect the text language with basic heuristics."""
     if not text or not text.strip():

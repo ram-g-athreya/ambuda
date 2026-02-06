@@ -3,25 +3,21 @@
 The main route here is `edit`, which defines the page editor and the edit flow.
 """
 
-import re
 import uuid
 from dataclasses import dataclass
-import defusedxml.ElementTree as DET
 
 from flask import (
     Blueprint,
     current_app,
     flash,
-    jsonify,
     render_template,
     request,
     send_file,
     url_for,
 )
 from flask_babel import lazy_gettext as _l
-from flask_login import current_user, login_required
+from flask_login import current_user
 from flask_wtf import FlaskForm
-from pydantic import BaseModel
 from werkzeug.exceptions import abort
 from wtforms import HiddenField, RadioField, StringField
 from wtforms.validators import DataRequired, ValidationError
@@ -30,25 +26,14 @@ from wtforms.widgets import TextArea
 from ambuda import database as db
 from ambuda import queries as q
 from ambuda.enums import SitePageStatus
-from ambuda.utils import google_ocr, llm_structuring, project_utils, project_structuring
+from ambuda.utils import project_utils
 from ambuda.utils.diff import revision_diff
 from ambuda.utils.revisions import EditError, add_revision
-from ambuda.utils.project_structuring import ProofPage, split_plain_text_to_blocks
+from ambuda.utils.project_structuring import ProofPage
 from ambuda.utils.xml_validation import validate_proofing_xml
-from ambuda.views.api import bp as api
 from ambuda.views.site import bp as site
-from ambuda.views.proofing.decorators import p2_required
 
 bp = Blueprint("page", __name__)
-
-
-class AutoStructureRequest(BaseModel):
-    """Request model for auto-structuring page content."""
-
-    content: str
-    match_stage: bool = False
-    match_speaker: bool = False
-    match_chaya: bool = False
 
 
 def page_xml_validator(form, field):
@@ -376,126 +361,3 @@ def revision(project_slug, page_slug, revision_id):
         revision=cur_revision,
         diff=diff,
     )
-
-
-# FIXME: added trailing slash as a quick hack to support OCR routes on
-# frontend, which just concatenate the window URL onto "/api/ocr".
-@api.route("/ocr/<project_slug>/<page_slug>/")
-@login_required
-def ocr_api(project_slug, page_slug):
-    """Apply Google OCR to the given page."""
-    project_ = q.project(project_slug)
-    if project_ is None:
-        abort(404)
-    assert project_
-
-    page_ = q.page(project_.id, page_slug)
-    if not page_:
-        abort(404)
-    assert page_
-
-    ocr_response = google_ocr.run(
-        page_,
-        current_app.config.get("S3_BUCKET"),
-        current_app.config.get("CLOUDFRONT_BASE_URL"),
-    )
-    ocr_text = ocr_response.text_content
-
-    structured_data = ProofPage.from_content_and_page_id(ocr_text, page_.id)
-    ret = structured_data.to_xml_string()
-    return ret
-
-
-@api.route("/llm-structuring/<project_slug>/<page_slug>/", methods=["POST"])
-@p2_required
-def llm_structuring_api(project_slug, page_slug):
-    project_ = q.project(project_slug)
-    if project_ is None:
-        abort(404)
-    assert project_
-
-    page_ = q.page(project_.id, page_slug)
-    if not page_:
-        abort(404)
-    assert page_
-
-    content = request.json.get("content", "")
-    if not content:
-        return "Error: No content provided", 400
-
-    try:
-        api_key = current_app.config.get("GEMINI_API_KEY")
-        if not api_key:
-            return "Error: GEMINI_API_KEY not configured", 500
-
-        structured_content = llm_structuring.run(content, api_key)
-        return structured_content
-    except Exception as e:
-        current_app.logger.error(f"LLM structuring failed: {e}")
-        return f"Error: {str(e)}", 500
-
-
-@api.route("/proofing/auto-structure", methods=["POST"])
-@login_required
-def auto_structure_api():
-    """Apply auto-structuring heuristics to the page content."""
-    if not request.json:
-        return jsonify({"error": "No data provided"}), 400
-
-    try:
-        req = AutoStructureRequest.model_validate(request.json)
-    except Exception as e:
-        return jsonify({"error": f"Invalid request: {str(e)}"}), 400
-
-    try:
-        root = DET.fromstring(req.content)
-        if root.tag != "page":
-            return jsonify({"error": "Invalid XML: root tag must be 'page'"}), 400
-
-        text = "".join(root.itertext())
-        blocks = split_plain_text_to_blocks(
-            text,
-            match_stage=req.match_stage,
-            match_speaker=req.match_speaker,
-            match_chaya=req.match_chaya,
-            ignore_non_devanagari=True,
-        )
-        page = ProofPage(id=0, blocks=blocks)
-        xml = page.to_xml_string()
-        return jsonify({"content": xml})
-
-    except Exception as e:
-        current_app.logger.error(f"Auto-structuring failed: {e}")
-        return jsonify({"error": f"Auto-structuring failed: {str(e)}"}), 500
-
-
-@api.route("/proofing/<project_slug>/<page_slug>/history")
-def page_history_api(project_slug, page_slug):
-    ctx = _get_page_context(project_slug, page_slug)
-    if ctx is None:
-        abort(404)
-
-    assert ctx
-    revisions = []
-    for r in reversed(ctx.cur.revisions):
-        revisions.append(
-            {
-                "id": r.id,
-                "created": r.created.strftime("%Y-%m-%d %H:%M"),
-                "author": r.author.username,
-                "summary": r.summary or "",
-                "status": r.status.name,
-                "revision_url": url_for(
-                    "proofing.page.revision",
-                    project_slug=project_slug,
-                    page_slug=page_slug,
-                    revision_id=r.id,
-                    _external=True,
-                ),
-                "author_url": url_for(
-                    "user.summary", username=r.author.username, _external=True
-                ),
-            }
-        )
-
-    return jsonify({"revisions": revisions})

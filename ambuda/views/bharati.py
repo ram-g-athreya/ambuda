@@ -2,15 +2,7 @@ import functools
 from dataclasses import dataclass
 from pathlib import Path
 
-from flask import (
-    Blueprint,
-    render_template,
-    current_app,
-    request,
-    redirect,
-    url_for,
-    abort,
-)
+from flask import Blueprint, render_template, current_app, request, redirect, url_for
 from vidyut.kosha import Kosha, PadaEntry, PratipadikaEntry, DhatuEntry
 from vidyut.lipi import detect, transliterate, Scheme
 from vidyut.prakriya import (
@@ -30,12 +22,7 @@ from vidyut.prakriya import (
     DhatuPada,
 )
 
-from ambuda.views.api import bp as api
-
-
 bp = Blueprint("bharati", __name__)
-
-QUERY_MAX_LENGTH = 1000
 
 
 MINOR_RULES = {
@@ -374,23 +361,9 @@ def index():
     query = request.args.get("q", "").strip()
     if not query:
         return render_template("bharati/index.html")
-    if len(query) > QUERY_MAX_LENGTH:
-        abort(400)
 
     entries = _get_kosha_entries(query)
     return render_template("bharati/query.html", query=query, entries=entries)
-
-
-@api.route("/bharati/query/<query>")
-def bharati_query(query):
-    query = query.strip()
-    if len(query) > QUERY_MAX_LENGTH:
-        abort(400)
-    input_scheme = detect(query) or Scheme.HarvardKyoto
-    query = transliterate(query, input_scheme, Scheme.Slp1)
-
-    entries = _get_kosha_entries(query)
-    return render_template("htmx/bharati-query.html", query=query, entries=entries)
 
 
 @bp.route("/dhatus/<dhatu_spec>")

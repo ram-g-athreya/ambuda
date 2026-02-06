@@ -19,7 +19,6 @@ from vidyut.lipi import detect, transliterate, Scheme
 import ambuda.queries as q
 from ambuda.utils import xml
 from ambuda.utils.dict_utils import expand_apte_keys, expand_skd_keys, standardize_key
-from ambuda.views.api import bp as api
 
 bp = Blueprint("dictionaries", __name__)
 
@@ -137,22 +136,6 @@ def entry(sources, query):
     entries = _fetch_entries(sources, query)
     return render_template(
         "dictionaries/index.html",
-        query=query,
-        entries=entries,
-        dictionaries=dictionaries,
-    )
-
-
-@api.route("/dictionaries/<list:sources>/<query>")
-def entry_htmx(sources, query):
-    dictionaries = _get_dictionary_data()
-    sources = [s for s in sources if s in dictionaries]
-    if not sources:
-        abort(404)
-
-    entries = _fetch_entries(sources, query)
-    return render_template(
-        "htmx/dictionary-results.html",
         query=query,
         entries=entries,
         dictionaries=dictionaries,

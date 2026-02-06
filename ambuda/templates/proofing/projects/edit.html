@@ -16,12 +16,16 @@
 
 {% set ocr_url = url_for("proofing.project.batch_ocr", slug=project.slug)  %}
 {% set editing_url = url_for("proofing.project.batch_editing", slug=project.slug)  %}
+{% set batch_llm_url = url_for("proofing.project.batch_llm", slug=project.slug)  %}
 
 <div class="prose">
 
 <ul>
   <li><a href="{{ ocr_url }}">{{ _('Run batch OCR') }}</a></li>
   <li><a href="{{ editing_url }}">{{ _('Run batch editing') }}</a></li>
+  {% if current_user.is_p2 %}
+  <li><a href="{{ batch_llm_url }}">{{ _('Run batch LLM') }}</a></li>
+  {% endif %}
 </ul>
 
 {{ components.flash_messages() }}

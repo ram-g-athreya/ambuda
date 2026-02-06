@@ -1,22 +1,19 @@
-{% extends 'proofing/base-sidebar.html' %}
+{% extends 'proofing/base.html' %}
+{% import "macros/components.html" as mc %}
 {% import "macros/proofing.html" as m %}
 
 
-{% block title %}Recent changes | Ambuda{% endblock %}
-
-
-{% block sidebar %}{{ m.main_nav('changes', current_user=current_user) }}{% endblock %}
+{% block title %}{{ mc.title(_('Recent changes')) }}{% endblock %}
 
 
 {% block content %}
-{{ m.title_and_subtitle(
-    _("Recent changes"),
-    "Recent edits and revisions made by people like you!") }}
+{{ m.header(_('Recent changes')) }}
+{{ m.proofing_tabs('recent-changes', current_user) }}
 
 {% if recent_activity -%}
 {{ m.activity_log(recent_activity) }}
 {% else %}
-<p>No changes found.</p>
+<p class="text-slate-500">{{ _('No changes found.') }}</p>
 {% endif %}
 
 {% endblock %}
