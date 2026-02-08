@@ -2,6 +2,7 @@
 {% import "macros/components.html" as components %}
 {% import "macros/proofing.html" as m %}
 
+{% block extra_scripts %}<script defer src="{{ asset('gen/proofing.js') }}"></script>{% endblock %}
 
 {% block title %}Publish: {{ project.display_title }} | Ambuda{% endblock %}
 
@@ -24,7 +25,7 @@
 </script>
 
 <div class="prose max-w-none">
-  <h2>Publish</h2>
+  <h2>{{ _('Publish') }}</h2>
 
   <div x-data="publishConfig()" class="not-prose">
     <form method="POST"
@@ -35,7 +36,7 @@
 
       <div class="mb-6">
         <div class="flex justify-between items-center mb-4">
-          <h3 class="text-lg font-bold">Publish configs</h3>
+          <h3 class="text-lg font-bold">{{ _('Publish configs') }}</h3>
           <button type="button" @click="addPublishEntry()" class="btn btn-basic text-sm">+ Add config</button>
         </div>
 
@@ -73,24 +74,24 @@
                         <button type="button"
                                 @click.stop="newAuthorOpen = !newAuthorOpen; newAuthorName = ''"
                                 class="ml-1 inline-flex items-center justify-center w-4 h-4 text-xs font-bold rounded text-green-600 hover:bg-green-100"
-                                title="Add new author">+</button>
+                                title="{{ _('Add new author') }}">+</button>
                       </template>
 
                       <template x-if="field.name === 'genre'">
                         <button type="button"
                                 @click.stop="newGenreOpen = !newGenreOpen; newGenreName = ''"
                                 class="ml-1 inline-flex items-center justify-center w-4 h-4 text-xs font-bold rounded text-green-600 hover:bg-green-100"
-                                title="Add new genre">+</button>
+                                title="{{ _('Add new genre') }}">+</button>
                       </template>
 
                       <template x-if="field.name === 'target'">
                         <span class="relative inline-block ml-1" @click.stop>
                           <button type="button" @click="filterHelpOpen = !filterHelpOpen"
                                   class="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold border border-slate-400 rounded-full text-slate-500 hover:bg-slate-200"
-                                  title="Filter syntax help">i</button>
+                                  title="{{ _('Filter syntax help') }}">i</button>
                           <div x-show="filterHelpOpen" @click.away="filterHelpOpen = false"
                                class="absolute left-0 mt-1 bg-white border border-slate-300 rounded shadow-lg z-20 w-80 p-3 text-xs">
-                            <h4 class="font-semibold mb-2">Filter syntax</h4>
+                            <h4 class="font-semibold mb-2">{{ _('Filter syntax') }}</h4>
                             <p class="text-slate-600 mb-2">Selects which blocks to include using S-expression syntax.</p>
                             <div class="space-y-1 mb-3 text-slate-700">
                               <div><code class="bg-slate-200 px-1 rounded">(image 1 10)</code> - pages 1 through 10</div>
@@ -100,7 +101,7 @@
                               <div><code class="bg-slate-200 px-1 rounded">(tag verse)</code> - blocks of type verse</div>
                               <div><code class="bg-slate-200 px-1 rounded">(tag p)</code> - blocks of type p</div>
                             </div>
-                            <h4 class="font-semibold mb-2">Combining conditions</h4>
+                            <h4 class="font-semibold mb-2">{{ _('Combining conditions') }}</h4>
                             <div class="space-y-1 text-slate-700">
                               <div><code class="bg-slate-200 px-1 rounded">(and (page 5 10) (tag verse))</code> - AND</div>
                               <div><code class="bg-slate-200 px-1 rounded">(or (tag p) (tag verse))</code> - OR</div>
@@ -246,7 +247,7 @@
 
       <div x-show="showJSON" class="mt-4 bg-slate-50 rounded border border-slate-200 p-4">
         <div class="flex justify-between items-center mb-2">
-          <h4 class="font-bold text-sm">Generated JSON</h4>
+          <h4 class="font-bold text-sm">{{ _('Generated JSON') }}</h4>
           <button type="button" @click="copyJSON()" class="btn btn-basic text-xs">Copy</button>
         </div>
         <pre class="text-xs overflow-auto max-h-96 p-3 rounded border border-slate-300 bg-white"

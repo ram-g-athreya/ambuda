@@ -5,7 +5,6 @@ imported this blueprint. They are now co-located here for discoverability.
 """
 
 import defusedxml.ElementTree as DET
-
 from flask import (
     Blueprint,
     abort,
@@ -21,6 +20,7 @@ from sqlalchemy import select
 
 from ambuda import database as db
 from ambuda import queries as q
+from ambuda.rate_limit import limiter
 from ambuda.utils import google_ocr, llm_structuring, xml
 from ambuda.utils import word_parses as parse_utils
 from ambuda.utils.parse_alignment import align_text_with_parse
@@ -45,6 +45,7 @@ class AutoStructureRequest(BaseModel):
 
 
 @bp.route("/ocr/<project_slug>/<page_slug>/")
+@limiter.limit("15/hour")
 @login_required
 def ocr_api(project_slug, page_slug):
     """Apply Google OCR to the given page."""
@@ -71,6 +72,7 @@ def ocr_api(project_slug, page_slug):
 
 
 @bp.route("/llm-structuring/<project_slug>/<page_slug>/", methods=["POST"])
+@limiter.limit("10/hour")
 @p2_required
 def llm_structuring_api(project_slug, page_slug):
     project_ = q.project(project_slug)
@@ -90,16 +92,18 @@ def llm_structuring_api(project_slug, page_slug):
     try:
         api_key = current_app.config.get("GEMINI_API_KEY")
         if not api_key:
-            return "Error: GEMINI_API_KEY not configured", 500
+            current_app.logger.error("GEMINI_API_KEY not configured")
+            return "Error: LLM service is not available", 500
 
         structured_content = llm_structuring.run(content, api_key)
         return structured_content
     except Exception as e:
         current_app.logger.error(f"LLM structuring failed: {e}")
-        return f"Error: {str(e)}", 500
+        return "Error: LLM structuring failed", 500
 
 
 @bp.route("/proofing/auto-structure", methods=["POST"])
+@limiter.limit("60/hour")
 @login_required
 def auto_structure_api():
     """Apply auto-structuring heuristics to the page content."""
@@ -109,7 +113,8 @@ def auto_structure_api():
     try:
         req = AutoStructureRequest.model_validate(request.json)
     except Exception as e:
-        return jsonify({"error": f"Invalid request: {str(e)}"}), 400
+        current_app.logger.warning(f"Invalid auto-structure request: {e}")
+        return jsonify({"error": "Invalid request data"}), 400
 
     try:
         root = DET.fromstring(req.content)
@@ -130,7 +135,7 @@ def auto_structure_api():
 
     except Exception as e:
         current_app.logger.error(f"Auto-structuring failed: {e}")
-        return jsonify({"error": f"Auto-structuring failed: {str(e)}"}), 500
+        return jsonify({"error": "Auto-structuring failed"}), 500
 
 
 @bp.route("/proofing/<project_slug>/<page_slug>/history")
@@ -195,8 +200,8 @@ def block_htmx(text_slug, block_slug):
 @bp.route("/texts/<text_slug>/<section_slug>")
 def reader_json(text_slug, section_slug):
     """Return section data as JSON. Currently unused (bootstrapped inline)."""
-    from ambuda.views.reader.texts import _prev_cur_next, _hk_to_dev, _make_section_url
     from ambuda.views.reader.schema import Section
+    from ambuda.views.reader.texts import _hk_to_dev, _make_section_url, _prev_cur_next
 
     text_ = q.text(text_slug)
     if text_ is None:
@@ -268,7 +273,7 @@ def toggle_bookmark():
 
 @bp.route("/dictionaries/<list:sources>/<query>")
 def entry_htmx(sources, query):
-    from ambuda.views.dictionaries import _get_dictionary_data, _fetch_entries
+    from ambuda.views.dictionaries import _fetch_entries, _get_dictionary_data
 
     dictionaries = _get_dictionary_data()
     sources = [s for s in sources if s in dictionaries]
@@ -291,9 +296,9 @@ def entry_htmx(sources, query):
 
 @bp.route("/bharati/query/<query>")
 def bharati_query(query):
-    from ambuda.views.bharati import _get_kosha_entries
+    from vidyut.lipi import Scheme, detect, transliterate
 
-    from vidyut.lipi import detect, transliterate, Scheme
+    from ambuda.views.bharati import _get_kosha_entries
 
     query = query.strip()
     input_scheme = detect(query) or Scheme.HarvardKyoto

@@ -13,6 +13,7 @@ from ambuda.tasks.utils import get_db_session
 from ambuda.utils import text_exports
 from ambuda.utils.text_exports import (
     ExportType,
+    create_or_update_xml_export,
     create_xml_file,
     create_plain_text,
     create_pdf,
@@ -145,6 +146,24 @@ def create_text_export_inner(
 @app.task(bind=True)
 def create_text_export(self, text_id: int, export_key: str, app_environment: str):
     create_text_export_inner(text_id, export_key, app_environment)
+
+
+@app.task(bind=True)
+def upload_xml_export(self, text_id, text_slug, tei_path, app_environment):
+    """Upload a TEI XML file produced by the publish flow to S3."""
+    tei = Path(tei_path)
+    try:
+        with get_db_session(app_environment) as (session, q, cfg):
+            create_or_update_xml_export(
+                text_id=text_id,
+                text_slug=text_slug,
+                tei_path=tei,
+                s3_bucket=cfg.S3_BUCKET,
+                session=session,
+                q=q,
+            )
+    finally:
+        tei.unlink(missing_ok=True)
 
 
 def delete_text_export_inner(export_id: int, app_environment: str, engine=None):

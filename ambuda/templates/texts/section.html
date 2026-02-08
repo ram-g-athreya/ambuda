@@ -81,7 +81,7 @@ or in their own modal window. #}
   <div class="text-sm border-r px-4">
     <span class="hidden md:inline">{{ _('Script:') }}</span>
     <select id="switch-sa" class="f-select" @change="saveSettings" x-model="script">
-      {% include 'include/script-options.html' %}
+      {% include 'include/script-options-js.html' %}
     </select>
   </div>
   {% if not has_no_parse %}
@@ -224,7 +224,7 @@ lg:top-10 is to vertically center the sidebar when sticky scrolling.
           {% if parent_block.page_url %}
           <a href="{{ parent_block.page_url }}"
              class="text-slate-400 hover:text-slate-600 flex-shrink-0 mt-1"
-             title="Edit in proofing interface">
+             title="{{ _('Edit in proofing interface') }}">
             <svg width="16" height="16"><use href="#edit"></use></svg>
           </a>
           {% endif %}
@@ -239,7 +239,7 @@ lg:top-10 is to vertically center the sidebar when sticky scrolling.
         <div class="relative flex-shrink-0 mt-1 group" x-data="{ open: false }">
           <button @click="open = !open"
                   class="text-slate-400 hover:text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity"
-                  title="Block actions">
+                  title="{{ _('Block actions') }}">
             <span class="text-xs">&#x25BC;</span>
           </button>
           <div x-show="open"
@@ -249,23 +249,23 @@ lg:top-10 is to vertically center the sidebar when sticky scrolling.
             {% if block_.page_url %}
             <a href="{{ block_.page_url }}"
                class="block px-3 py-2 text-sm hover:bg-slate-100 flex items-center gap-2"
-               title="Edit in proofing interface">
+               title="{{ _('Edit in proofing interface') }}">
               <svg width="16" height="16"><use href="#edit"></use></svg>
-              <span>Edit</span>
+              <span>{{ _('Edit') }}</span>
             </a>
             {% endif %}
             <a href="#{{ block_.slug }}"
                class="block px-3 py-2 text-sm hover:bg-slate-100 flex items-center gap-2"
-               title="Link to this block">
+               title="{{ _('Link to this block') }}">
               <svg width="16" height="16"><use href="#link"></use></svg>
-              <span>Permalink</span>
+              <span>{{ _('Permalink') }}</span>
             </a>
             <a href="#"
                onclick="alert('Please enable JavaScript to bookmark verses'); return false;"
                class="block px-3 py-2 text-sm hover:bg-slate-100 flex items-center gap-2"
-               title="Bookmark this block">
+               title="{{ _('Bookmark this block') }}">
               <svg width="16" height="16"><use href="#bookmark"></use></svg>
-              <span>Bookmark</span>
+              <span>{{ _('Bookmark') }}</span>
             </a>
           </div>
         </div>
@@ -290,7 +290,7 @@ lg:top-10 is to vertically center the sidebar when sticky scrolling.
               <a x-show="parent_block.page_url"
                  :href="parent_block.page_url"
                  class="text-slate-400 hover:text-slate-600 flex-shrink-0 mt-1"
-                 title="Edit in proofing interface">
+                 title="{{ _('Edit in proofing interface') }}">
                 <svg width="16" height="16"><use href="#edit"></use></svg>
               </a>
             </div>
@@ -313,7 +313,7 @@ lg:top-10 is to vertically center the sidebar when sticky scrolling.
           <div class="relative flex-shrink-0 mt-1 opacity-0 group-hover:opacity-100 transition-opacity" x-data="{ open: false }">
             <button @click="open = !open"
                     class="text-slate-400 hover:text-slate-600"
-                    title="Block actions">
+                    title="{{ _('Block actions') }}">
               <span class="text-xs">&#x25BC;</span>
             </button>
             <div x-show="open"
@@ -323,22 +323,22 @@ lg:top-10 is to vertically center the sidebar when sticky scrolling.
               <a x-show="b.page_url"
                  :href="b.page_url"
                  class="block px-3 py-2 text-sm hover:bg-slate-100 flex items-center gap-2"
-                 title="Edit in proofing interface">
+                 title="{{ _('Edit in proofing interface') }}">
                 <svg width="16" height="16"><use href="#edit"></use></svg>
-                <span>Edit</span>
+                <span>{{ _('Edit') }}</span>
               </a>
               <a :href="'#' + b.slug"
                  class="block px-3 py-2 text-sm hover:bg-slate-100 flex items-center gap-2"
-                 title="Link to this block">
+                 title="{{ _('Link to this block') }}">
                 <svg width="16" height="16"><use href="#link"></use></svg>
-                <span>Permalink</span>
+                <span>{{ _('Permalink') }}</span>
               </a>
               <a href="#"
                  @click="toggleBookmark(b.slug, $event)"
                  class="block px-3 py-2 text-sm hover:bg-slate-100 flex items-center gap-2"
-                 title="Bookmark this block">
+                 title="{{ _('Bookmark this block') }}">
                 <svg width="16" height="16"><use href="#bookmark"></use></svg>
-                <span>Bookmark</span>
+                <span>{{ _('Bookmark') }}</span>
               </a>
             </div>
           </div>

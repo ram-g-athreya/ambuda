@@ -5,22 +5,21 @@ from flask import (
     Blueprint,
     abort,
     current_app,
-    render_template,
-    request,
     flash,
     redirect,
+    render_template,
+    request,
     url_for,
 )
-from flask_login import login_required, current_user
+from flask_login import current_user, login_required
 from pydantic import BaseModel
-from vidyut.lipi import transliterate, Scheme
+from vidyut.lipi import Scheme, transliterate
 
 import ambuda.queries as q
 from ambuda import database as db
-from ambuda.utils import xml, revisions
 from ambuda.tasks import tagging as tagging_tasks
+from ambuda.utils import revisions, xml
 from ambuda.views.proofing.decorators import p2_required
-
 
 bp = Blueprint("tagging", __name__)
 

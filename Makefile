@@ -77,7 +77,7 @@ db-seed-all:
 
 # For Docker try `make mode=dev docker-start`
 devserver:
-	./node_modules/.bin/concurrently "uv run flask run -h 0.0.0.0 -p 5000" "npx tailwindcss -i ambuda/static/css/style.css -o ambuda/static/gen/style.css --watch" "npx esbuild ambuda/static/js/main.js --outfile=ambuda/static/gen/main.js --bundle --watch"
+	./node_modules/.bin/concurrently "uv run flask run -h 0.0.0.0 -p 5000" "npx tailwindcss -i ambuda/static/css/style.css -o ambuda/static/gen/style.css --watch" "npx esbuild ambuda/static/js/main.js ambuda/static/js/proofing.js --outdir=ambuda/static/gen --bundle --watch"
 	
 # Run a local Celery instance for background tasks.
 celery: 
@@ -170,11 +170,11 @@ css-prod:
 # Run esbuild to build our JavaScript, and rebuild our JavaScript every time a
 # relevant file changes.
 js-dev:
-	npx esbuild ambuda/static/js/main.js --outfile=ambuda/static/gen/main.js --bundle --watch
+	npx esbuild ambuda/static/js/main.js ambuda/static/js/proofing.js --outdir=ambuda/static/gen --bundle --watch
 
 # Build JS for production.
 js-prod:
-	npx esbuild ambuda/static/js/main.js --outfile=ambuda/static/gen/main.js --bundle --minify
+	npx esbuild ambuda/static/js/main.js ambuda/static/js/proofing.js --outdir=ambuda/static/gen --bundle --minify
 
 js-test:
 	npx jest

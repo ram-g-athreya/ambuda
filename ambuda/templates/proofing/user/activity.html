@@ -16,7 +16,7 @@
 
 {% if recent_activity %}
 <div class="prose">
-<h2>Summary</h2>
+<h2>{{ _('Summary') }}</h2>
 </div>
 
 <div class="flex flex-col items-end overflow-hidden max-w-xl xl:max-w-full">
@@ -24,7 +24,7 @@
 </div>
 
 <div class="prose">
-<h2>All changes</h2>
+<h2>{{ _('All changes') }}</h2>
 </div>
 
 {{ m.activity_log(recent_activity) }}

@@ -63,7 +63,7 @@
     <div class="bg-slate-100 p-3">
       <div class="flex justify-between items-start mb-3">
         <div class="flex items-center gap-3">
-          <h3 class="font-bold text-sm">Bulk Tools</h3>
+          <h3 class="font-bold text-sm">{{ _('Bulk Tools') }}</h3>
           <div class="relative" @click.away="helpOpen = false">
             <button @click="helpOpen = !helpOpen"
                     class="text-xs px-2 py-1 border border-slate-400 rounded hover:bg-slate-200 text-slate-600">
@@ -71,7 +71,7 @@
             </button>
             <div x-show="helpOpen" x-transition
                  class="absolute left-0 mt-1 bg-white border border-slate-300 rounded shadow-lg z-20 w-96 p-3 text-xs">
-              <h4 class="font-semibold mb-2">Select blocks syntax:</h4>
+              <h4 class="font-semibold mb-2">{{ _('Select blocks syntax:') }}</h4>
               <div class="space-y-1 mb-3 text-slate-700">
                 {{ help_item('lang:sa', 'language is Sanskrit') }}
                 {{ help_item('type:paragraph', 'block type') }}
@@ -84,7 +84,7 @@
                 {{ help_item('lang:sa OR lang:en', 'OR') }}
                 {{ help_item('NOT type:ignore', 'NOT') }}
               </div>
-              <h4 class="font-semibold mb-2">Change blocks syntax:</h4>
+              <h4 class="font-semibold mb-2">{{ _('Change blocks syntax:') }}</h4>
               <div class="space-y-1 text-slate-700">
                 {{ help_item('text="MyText"', 'set text field') }}
                 {{ help_item('text=""', 'clear text field') }}
@@ -296,7 +296,7 @@
                 <button @click="openDropdown = (openDropdown === `${item.slug}-${index}` ? null : `${item.slug}-${index}`)"
                         type="button"
                         class="text-[11px] px-2 py-0.5 bg-slate-200 hover:bg-slate-300 rounded border border-slate-400"
-                        title="Block actions">
+                        title="{{ _('Block actions') }}">
                   &hellip;
                 </button>
                 <div x-show="openDropdown === `${item.slug}-${index}`"
@@ -364,7 +364,7 @@
 
   <div x-show="structureJson" class="mt-4 bg-slate-50 rounded border border-slate-200 p-4">
     <div class="flex justify-between items-center mb-2">
-      <h4 class="font-bold text-sm">Generated Structure (JSON)</h4>
+      <h4 class="font-bold text-sm">{{ _('Generated Structure (JSON)') }}</h4>
       <button @click="copyToClipboard()" type="button" class="btn btn-basic text-xs">Copy to clipboard</button>
     </div>
     <pre class="text-xs overflow-auto max-h-96 p-3 rounded border border-slate-300"

@@ -52,7 +52,7 @@
 
 {# call i.exclamation_circle() first. otherwise this won't show up. #}
 {% macro unproofed_text_icon() %}
-<a title="This text is unproofed. Click to learn more." href="{{ url_for('about.unproofed_texts') }}">
+<a title="{{ _('This text is unproofed. Click to learn more.') }}" href="{{ url_for('about.unproofed_texts') }}">
   <svg class="inline text-red-300" width="16" height="16"><use href="#exclamation-circle"></use></svg>
 </a>
 {% endmacro %}

@@ -78,8 +78,9 @@ def add_token_revision(
     version: int,
     author_id: int,
     block_id: int,
+    session: Session | None = None,
 ) -> int:
-    session = q.get_session()
+    session = session or q.get_session()
 
     # Update with optimistic locking
     new_version = version + 1

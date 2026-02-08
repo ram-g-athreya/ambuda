@@ -238,6 +238,10 @@ class Query:
     def genres(self) -> list[db.Genre]:
         return list(self.session.scalars(select(db.Genre)).all())
 
+    def author(self, slug: str) -> db.Author | None:
+        stmt = select(db.Author).filter_by(slug=slug)
+        return self.session.scalars(stmt).first()
+
     def authors(self) -> list[db.Author]:
         return list(self.session.scalars(select(db.Author)).all())
 
@@ -393,6 +397,11 @@ def contributor_info() -> list[db.ContributorInfo]:
 def genres() -> list[db.Genre]:
     query = Query(get_session())
     return query.genres()
+
+
+def author(slug: str) -> db.Author | None:
+    query = Query(get_session())
+    return query.author(slug)
 
 
 def authors() -> list[db.Author]:

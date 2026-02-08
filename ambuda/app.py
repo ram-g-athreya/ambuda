@@ -14,6 +14,7 @@ from ambuda import auth as auth_manager
 from ambuda import checks, filters, queries
 from ambuda.consts import LOCALES
 from ambuda.mail import mailer
+from ambuda.rate_limit import limiter
 from ambuda.utils import assets
 from ambuda.utils.json_serde import AmbudaJSONEncoder
 from ambuda.utils.url_converters import ListConverter
@@ -24,7 +25,9 @@ from ambuda.views.auth import bp as auth
 from ambuda.views.bharati import bp as bharati
 from ambuda.views.blog import bp as blog
 from ambuda.views.dictionaries import bp as dictionaries
-from ambuda.views.proofing import bp as proofing, user_bp as users
+from ambuda.views.proofing import bp as proofing
+from ambuda.views.proofing import user_bp as users
+from ambuda.views.reader.authors import bp as authors
 from ambuda.views.reader.parses import bp as parses
 from ambuda.views.reader.texts import bp as texts
 from ambuda.views.site import bp as site
@@ -116,6 +119,7 @@ def create_app(config_env: str):
     login_manager.init_app(app)
 
     mailer.init_app(app)
+    limiter.init_app(app)
 
     cache = Cache(
         app, config={"CACHE_TYPE": "FileSystemCache", "CACHE_DIR": "/tmp/ambuda-cache"}
@@ -126,6 +130,7 @@ def create_app(config_env: str):
     app.url_map.converters["list"] = ListConverter
 
     # Blueprints
+    app.register_blueprint(authors, url_prefix="/authors")
     app.register_blueprint(about, url_prefix="/about")
     app.register_blueprint(admin, url_prefix="/admin")
     app.register_blueprint(api, url_prefix="/api")
@@ -153,6 +158,8 @@ def create_app(config_env: str):
             "d": filters.devanagari,
             "slp2dev": filters.slp_to_devanagari,
             "devanagari": filters.devanagari,
+            "hk_to_user_script": filters.hk_to_user_script,
+            "devanagari_to_user_script": filters.devanagari_to_user_script,
             "roman": filters.roman,
             "markdown": filters.markdown,
             "time_ago": filters.time_ago,
@@ -168,4 +175,30 @@ def create_app(config_env: str):
     )
 
     app.json_encoder = AmbudaJSONEncoder
+
+    @app.after_request
+    def set_security_headers(response):
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = (
+            "camera=(), microphone=(), geolocation=()"
+        )
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://plausible.io https://cdn.jsdelivr.net https://unpkg.com https://donorbox.org https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: https: ; "
+            "frame-src https://donorbox.org https://www.google.com/recaptcha/; "
+            "connect-src 'self' https://plausible.io; "
+            "font-src 'self'; "
+            "object-src 'none'; "
+            "base-uri 'self'"
+        )
+        if config_env == config.Env.PRODUCTION:
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
+        return response
+
     return app

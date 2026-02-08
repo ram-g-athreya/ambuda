@@ -1,10 +1,12 @@
 """Utilities for exporting texts in various formats."""
 
 import csv
+import hashlib
 import io
 
 import logging
 import tempfile
+from datetime import UTC, datetime
 from enum import StrEnum
 from functools import cached_property
 from pathlib import Path
@@ -498,3 +500,47 @@ def create_vocab_list(text: db.Text, out_path: Path) -> None:
         writer.writerow(["base", "block_count", "total_count"])
         for base, block_count, total_count in results:
             writer.writerow([base, block_count, total_count])
+
+
+def create_or_update_xml_export(
+    text_id: int,
+    text_slug: str,
+    tei_path: Path,
+    s3_bucket: str,
+    session,
+    q,
+) -> None:
+    """Upload a TEI XML file to S3 and create/update the TextExport record.
+
+    The local *tei_path* is deleted after a successful upload.
+    """
+    tei_size = tei_path.stat().st_size
+    sha256_hash = hashlib.sha256()
+    with open(tei_path, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            sha256_hash.update(chunk)
+    tei_checksum = sha256_hash.hexdigest()
+
+    export_slug = f"{text_slug}.xml"
+    s3_path = S3Path(s3_bucket, f"text-exports/{export_slug}")
+    s3_path.upload_file(tei_path)
+
+    text_export = q.text_export(export_slug)
+    if text_export:
+        text_export.s3_path = s3_path.path
+        text_export.size = tei_size
+        text_export.sha256_checksum = tei_checksum
+        text_export.updated_at = datetime.now(UTC)
+    else:
+        text_export = db.TextExport(
+            text_id=text_id,
+            slug=export_slug,
+            export_type="xml",
+            s3_path=s3_path.path,
+            size=tei_size,
+            sha256_checksum=tei_checksum,
+        )
+        session.add(text_export)
+    session.commit()
+
+    tei_path.unlink(missing_ok=True)

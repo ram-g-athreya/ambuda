@@ -16,7 +16,7 @@
 
 <div class="prose">
 
-<h2>Summary</h2>
+<h2>{{ _('Summary') }}</h2>
 
 {% if project.creator %}
 {% set user_link = url_for('user.summary', username=project.creator.username) %}
@@ -27,7 +27,7 @@
 {% endif %}
 
 
-<h2>Danger zone</h2>
+<h2>{{ _('Danger zone') }}</h2>
 
 {{ mf.show_errors_if_any(form.errors) }}
 <form method="POST" class="border border-red-500 rounded p-4 my-4">
@@ -48,7 +48,7 @@
 
   {{ form.slug(class_="p-2 block w-full my-4 border") }}
 
-  <input class="btn bg-red-700 hover:bg-red-900 transition text-white" type="submit" value="Permanently delete this project and its data">
+  <input class="btn bg-red-700 hover:bg-red-900 transition text-white" type="submit" value="{{ _('Permanently delete this project and its data') }}">
 </form>
 
 </div>

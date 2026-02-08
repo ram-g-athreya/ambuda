@@ -1,0 +1,23 @@
+{% extends 'base-text.html' %}
+
+{% block title %}{{ author.name }}{% endblock %}
+
+{% block main %}
+<article class="p-4 md:p-0 max-w-3xl mx-auto md:my-24 md:mb-36">
+  <h1 class="font-bold text-4xl text-center my-16">{{ author.name }}</h1>
+  {% if author.description %}
+  <div class="prose mx-auto mb-12">
+    {{ author.description | markdown | safe }}
+  </div>
+  {% endif %}
+  <ul class="divide-y divide-slate-200">
+    {% for text in texts %}
+    <li class="py-3 px-2 hover:bg-slate-50 rounded">
+      <a href="{{ url_for('texts.text', slug=text.slug) }}" class="hover:underline text-xl">
+        {{- text.title | hk_to_user_script | devanagari_to_user_script -}}
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+</article>
+{% endblock %}

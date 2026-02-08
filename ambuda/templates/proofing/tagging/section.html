@@ -32,7 +32,7 @@
     <div class="bg-slate-100 p-3">
       <div class="flex justify-between items-start mb-3">
         <div class="flex items-center gap-3">
-          <h3 class="font-bold text-sm">Batch Parse Editor</h3>
+          <h3 class="font-bold text-sm">{{ _('Batch Parse Editor') }}</h3>
           <div class="relative" @click.away="helpOpen = false">
             <button @click="helpOpen = !helpOpen"
                     class="text-xs px-2 py-1 border border-slate-400 rounded hover:bg-slate-200 text-slate-600">
@@ -40,19 +40,19 @@
             </button>
             <div x-show="helpOpen" x-transition
                  class="absolute left-0 mt-1 bg-white border border-slate-300 rounded shadow-lg z-20 w-96 p-3 text-xs">
-              <h4 class="font-semibold mb-2">Parse Data Format:</h4>
+              <h4 class="font-semibold mb-2">{{ _('Parse Data Format:') }}</h4>
               <div class="space-y-1 mb-3 text-slate-700">
                 {{ help_item('Form', 'Surface form (e.g., rAmaH)') }}
                 {{ help_item('Lemma', 'Base form (e.g., rAma)') }}
                 {{ help_item('Parse', 'Parse tags (e.g., pos=n,g=m,c=1,n=s)') }}
               </div>
-              <h4 class="font-semibold mb-2">Color Coding:</h4>
+              <h4 class="font-semibold mb-2">{{ _('Color Coding:') }}</h4>
               <div class="space-y-1 mb-3 text-slate-700">
                 {{ help_item('Orange', 'Nouns (pos=n)') }}
                 {{ help_item('Blue', 'Verbs (pos=v)') }}
                 {{ help_item('Green', 'Other parts of speech') }}
               </div>
-              <h4 class="font-semibold mb-2">Keyboard Shortcuts:</h4>
+              <h4 class="font-semibold mb-2">{{ _('Keyboard Shortcuts:') }}</h4>
               <div class="space-y-1 mb-3 text-slate-700">
                 {{ help_item('↓ Down', 'Move to next row (same column)') }}
                 {{ help_item('↑ Up', 'Move to previous row (same column)') }}
@@ -107,7 +107,7 @@
     </div>
 
     <div class="bg-amber-50 border-t border-amber-300 p-3">
-      <h4 class="font-semibold text-sm mb-2">Search & Replace Parse Values</h4>
+      <h4 class="font-semibold text-sm mb-2">{{ _('Search & Replace Parse Values') }}</h4>
       <div class="grid grid-cols-2 gap-3 mb-2">
         <div>
           <label class="block text-xs font-medium mb-1">Search (regex):</label>
@@ -304,7 +304,7 @@
 
   <div x-show="previewJson" class="mt-4 bg-slate-50 rounded border border-slate-200 p-4">
     <div class="flex justify-between items-center mb-2">
-      <h4 class="font-bold text-sm">Generated Structure (JSON)</h4>
+      <h4 class="font-bold text-sm">{{ _('Generated Structure (JSON)') }}</h4>
       <div class="flex gap-2">
         <button @click="copyToClipboard()" type="button" class="btn btn-basic text-xs">Copy to clipboard</button>
         <button @click="previewJson = ''" type="button" class="btn btn-basic text-xs">Close</button>

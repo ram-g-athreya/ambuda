@@ -13,6 +13,7 @@ export default () => ({
   init() {
     const els = [...this.$el.querySelectorAll('[data-title]')];
     this.matcher = createSearchMatcher(els, (el) => el.dataset.title);
+    this.$watch('query', () => this.filter());
   },
 
   filter() {

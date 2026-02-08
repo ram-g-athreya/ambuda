@@ -2,7 +2,6 @@
 
 import dataclasses as dc
 import difflib
-import hashlib
 import re
 import tempfile
 from datetime import UTC, datetime
@@ -35,13 +34,47 @@ from ambuda.models.proofing import (
     ProjectConfig,
 )
 from ambuda.models.texts import TextStatus
-from ambuda.utils import diff as diff_utils
+from ambuda.tasks.text_exports import upload_xml_export
 from ambuda.utils import project_utils
-from ambuda.utils.s3 import S3Path
 from ambuda.views.proofing.decorators import p2_required
 
 
 _SLUG_RE = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$")
+
+
+def _resolve_publish_config(
+    project_slug: str, text_slug: str
+) -> tuple[db.Project, PublishConfig] | None:
+    """Look up the project and its PublishConfig for *text_slug*.
+
+    Returns ``(project, publish_config)`` on success.  On failure flashes
+    an error message and returns ``None`` — the caller should redirect to
+    the config page.
+    """
+    project_ = q.project(project_slug)
+    if project_ is None:
+        abort(404)
+
+    if not project_.config:
+        flash("No publish configuration found. Please configure first.", "error")
+        return None
+
+    try:
+        project_config = ProjectConfig.model_validate_json(project_.config or "{}")
+    except Exception:
+        flash("Could not validate project config.", "error")
+        return None
+
+    if not project_config.publish:
+        flash("No publish configuration found. Please configure first.", "error")
+        return None
+
+    pc = next((c for c in project_config.publish if c.slug == text_slug), None)
+    if not pc:
+        flash(f"No publish configuration found for text '{text_slug}'.", "error")
+        return None
+
+    return project_, pc
 
 
 def _validate_slug(slug: str) -> str | None:
@@ -57,34 +90,11 @@ def _validate_slug(slug: str) -> str | None:
     return None
 
 
-def _align_sequences(
-    old_items: list, new_items: list, *, key=None
+def _align_blocks(
+    old_items: list, new_items: list
 ) -> list[tuple[int | None, int | None]]:
-    """Align two sequences to minimize the total diff.
-
-    Uses SequenceMatcher (LCS-based) to find an optimal alignment between
-    the old and new sequences.  Within ``replace`` regions the items are
-    paired positionally; excess items become pure inserts or deletes.
-
-    Args:
-        old_items: The old sequence.
-        new_items: The new sequence.
-        key: Optional callable to extract a comparison key from each item.
-             When *None*, items are compared directly.
-
-    Returns:
-        List of ``(old_index | None, new_index | None)`` pairs.  Both
-        indices are set for matched or changed items; only one is set for
-        pure insertions or deletions.
-    """
-    if key:
-        old_keys = [key(item) for item in old_items]
-        new_keys = [key(item) for item in new_items]
-    else:
-        old_keys = list(old_items)
-        new_keys = list(new_items)
-
-    matcher = difflib.SequenceMatcher(a=old_keys, b=new_keys, autojunk=False)
+    """Align blocks based on ."""
+    matcher = difflib.SequenceMatcher(a=old_items, b=new_items)
     pairs: list[tuple[int | None, int | None]] = []
     for op, a0, a1, b0, b1 in matcher.get_opcodes():
         if op == "equal":
@@ -107,6 +117,180 @@ def _align_sequences(
             for j in range(b0, b1):
                 pairs.append((None, j))
     return pairs
+
+
+def _extract_header_from_tei(tei_path: Path) -> str:
+    """Extract the ``<teiHeader>`` from a TEI file as a namespace-stripped XML string."""
+    _ns = "{http://www.tei-c.org/ns/1.0}"
+    for _, elem in etree.iterparse(str(tei_path), events=("end",)):
+        if elem.tag == f"{_ns}teiHeader":
+            for el in elem.iter():
+                el.tag = etree.QName(el).localname
+                for key in list(el.attrib):
+                    if "{" in key:
+                        el.attrib[etree.QName(key).localname] = el.attrib.pop(key)
+            etree.cleanup_namespaces(elem)
+            return etree.tostring(elem, encoding="unicode")
+    return ""
+
+
+def _build_tei_xml(
+    header_xml: str,
+    sections_data: list[tuple[str, list[tuple[str, str]]]],
+    text_slug: str,
+    language: str,
+) -> str:
+    """Build a pretty-printed TEI document from header and section/block data.
+
+    We pretty-print so that we have a clean diff between old and new.
+    """
+    root = etree.Element("TEI")
+    if header_xml:
+        header_el = etree.fromstring(header_xml)
+        root.append(header_el)
+    text_el = etree.SubElement(root, "text")
+    text_el.set("id", text_slug)
+    text_el.set("lang", language)
+    body = etree.SubElement(text_el, "body")
+    for section_slug, blocks in sections_data:
+        div = etree.SubElement(body, "div")
+        div.set("n", section_slug)
+        for block_slug, block_xml in blocks:
+            block_el = etree.fromstring(block_xml)
+            block_el.set("n", block_slug)
+            div.append(block_el)
+    etree.indent(root, space="  ")
+    return etree.tostring(root, encoding="unicode", xml_declaration=False)
+
+
+def _inline_highlight(old_line: str, new_line: str) -> str:
+    """Return a single HTML string showing *old_line* → *new_line* inline.
+
+    Unchanged text is passed through, deletions are wrapped in
+    ``<del class="diff-hi-del">``, insertions in ``<ins class="diff-hi-add">``.
+    """
+    from markupsafe import escape
+
+    sm = difflib.SequenceMatcher(None, old_line, new_line)
+    parts: list[str] = []
+    for op, a0, a1, b0, b1 in sm.get_opcodes():
+        if op == "equal":
+            parts.append(str(escape(old_line[a0:a1])))
+        elif op == "replace":
+            parts.append(f'<del class="diff-hi-del">{escape(old_line[a0:a1])}</del>')
+            parts.append(f'<ins class="diff-hi-add">{escape(new_line[b0:b1])}</ins>')
+        elif op == "delete":
+            parts.append(f'<del class="diff-hi-del">{escape(old_line[a0:a1])}</del>')
+        elif op == "insert":
+            parts.append(f'<ins class="diff-hi-add">{escape(new_line[b0:b1])}</ins>')
+    return "".join(parts)
+
+
+def _build_diff_lines(old_xml: str, new_xml: str) -> list[dict]:
+    """Produce a flat list of diff entries for a unified diff view.
+
+    Each entry is a dict with ``"type"`` being one of:
+
+    - ``"context"`` – unchanged line (has ``old_no``, ``new_no``, ``text``)
+    - ``"add"`` – added line (has ``new_no``, ``text``)
+    - ``"delete"`` – removed line (has ``old_no``, ``text``)
+    - ``"replace"`` – changed line shown inline (has ``old_no``, ``new_no``,
+      ``html`` with ``<del>``/``<ins>`` highlights)
+    - ``"collapsed"`` – hidden unchanged section (has ``count``, ``lines``)
+
+    For brand-new texts (empty *old_xml*), every line is an ``"add"`` entry
+    with no collapsing.
+    """
+    CONTEXT_LINES = 3
+    MIN_COLLAPSE = 4
+
+    new_lines = new_xml.splitlines()
+
+    if not old_xml:
+        return [
+            {"type": "add", "new_no": i + 1, "text": line}
+            for i, line in enumerate(new_lines)
+        ]
+
+    old_lines = old_xml.splitlines()
+
+    raw: list[dict] = []
+    matcher = difflib.SequenceMatcher(None, old_lines, new_lines)
+    for op, a0, a1, b0, b1 in matcher.get_opcodes():
+        if op == "equal":
+            for i, j in zip(range(a0, a1), range(b0, b1)):
+                raw.append(
+                    {
+                        "type": "context",
+                        "old_no": i + 1,
+                        "new_no": j + 1,
+                        "text": old_lines[i],
+                    }
+                )
+        elif op == "replace":
+            # Pair up old/new lines for inline highlighting.
+            a_len, b_len = a1 - a0, b1 - b0
+            common = min(a_len, b_len)
+            for k in range(common):
+                html = _inline_highlight(old_lines[a0 + k], new_lines[b0 + k])
+                raw.append(
+                    {
+                        "type": "replace",
+                        "old_no": a0 + k + 1,
+                        "new_no": b0 + k + 1,
+                        "html": html,
+                    }
+                )
+            for i in range(a0 + common, a1):
+                raw.append({"type": "delete", "old_no": i + 1, "text": old_lines[i]})
+            for j in range(b0 + common, b1):
+                raw.append({"type": "add", "new_no": j + 1, "text": new_lines[j]})
+        elif op == "delete":
+            for i in range(a0, a1):
+                raw.append({"type": "delete", "old_no": i + 1, "text": old_lines[i]})
+        elif op == "insert":
+            for j in range(b0, b1):
+                raw.append({"type": "add", "new_no": j + 1, "text": new_lines[j]})
+
+    visible = [entry["type"] != "context" for entry in raw]
+    for i, entry in enumerate(raw):
+        if entry["type"] != "context":
+            for j in range(max(0, i - CONTEXT_LINES), i):
+                visible[j] = True
+            for j in range(i + 1, min(len(raw), i + CONTEXT_LINES + 1)):
+                visible[j] = True
+
+    first_change = next(
+        (i for i, e in enumerate(raw) if e["type"] != "context"), len(raw)
+    )
+    for i in range(first_change):
+        visible[i] = False
+
+    last_change = next(
+        (i for i in range(len(raw) - 1, -1, -1) if raw[i]["type"] != "context"), -1
+    )
+    for i in range(last_change + 1, len(raw)):
+        visible[i] = False
+
+    result: list[dict] = []
+    i = 0
+    while i < len(raw):
+        if visible[i]:
+            result.append(raw[i])
+            i += 1
+        else:
+            hidden: list[dict] = []
+            while i < len(raw) and not visible[i]:
+                hidden.append(raw[i])
+                i += 1
+            if len(hidden) >= MIN_COLLAPSE:
+                result.append(
+                    {"type": "collapsed", "count": len(hidden), "lines": hidden}
+                )
+            else:
+                result.extend(hidden)
+
+    return result
 
 
 bp = Blueprint("publish", __name__)
@@ -206,110 +390,89 @@ def config(slug):
 @p2_required
 def preview(project_slug, text_slug):
     """Preview the changes that will be made when publishing a single text."""
-    project_ = q.project(project_slug)
-    if project_ is None:
-        abort(404)
 
-    assert project_
-    config_page = lambda: redirect(
-        url_for("proofing.publish.config", slug=project_slug)
-    )
-    if not project_.config:
-        flash("No publish configuration found. Please configure first.", "error")
-        return config_page()
-    try:
-        project_config = ProjectConfig.model_validate_json(project_.config or "{}")
-    except Exception as e:
-        flash("Could not validate project config", "error")
-        return config_page()
-    if not project_config.publish:
-        flash("No publish configuration found. Please configure first.", "error")
-        return config_page()
-
-    config = next((c for c in project_config.publish if c.slug == text_slug), None)
-    if not config:
-        flash(f"No publish configuration found for text '{text_slug}'.", "error")
-        return config_page()
+    result = _resolve_publish_config(project_slug, text_slug)
+    if result is None:
+        return redirect(url_for("proofing.publish.config", slug=project_slug))
+    project_, config = result
 
     session = q.get_session()
-
     existing_text = session.execute(
         sqla.select(db.Text).where(db.Text.slug == text_slug)
     ).scalar_one_or_none()
 
-    existing_blocks = []
+    # Generate new TEI and extract header + sections
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tei_path = Path(tmpdir) / "preview.xml"
+        document_data = publishing_utils.create_tei_document(project_, config, tei_path)
+        new_header = _extract_header_from_tei(tei_path)
+
+    new_sections_data = [
+        (s.slug, [(b.slug, b.xml) for b in s.blocks]) for s in document_data.sections
+    ]
+    new_xml = _build_tei_xml(
+        new_header, new_sections_data, config.slug, config.language
+    )
+
+    # Build old TEI from DB through the same pipeline
+    old_xml = ""
     if existing_text:
-        existing_blocks = (
+        new_section_order = [s.slug for s in document_data.sections]
+
+        old_sections = (
             session.execute(
-                sqla.select(db.TextBlock)
-                .where(db.TextBlock.text_id == existing_text.id)
-                .order_by(db.TextBlock.n)
+                sqla.select(db.TextSection).where(
+                    db.TextSection.text_id == existing_text.id
+                )
             )
             .scalars()
             .all()
         )
+        old_section_map = {s.slug: s for s in old_sections}
 
-    with tempfile.NamedTemporaryFile(delete_on_close=False) as fp:
-        fp.close()
-        _ = publishing_utils.create_tei_document(project_, config, Path(fp.name))
-        document = publishing_utils.parse_tei_document(Path(fp.name))
-    new_blocks = [b.xml for section in document.sections for b in section.blocks]
+        # Order old sections to match new section order to minimize spurious diffs
+        ordered_old_sections = []
+        for slug in new_section_order:
+            if slug in old_section_map:
+                ordered_old_sections.append(old_section_map.pop(slug))
+        # Append any remaining old sections not in the new order
+        ordered_old_sections.extend(old_section_map.values())
 
-    old_xmls = [b.xml for b in existing_blocks]
-    alignment = _align_sequences(old_xmls, new_blocks)
-
-    diffs = []
-    for old_idx, new_idx in alignment:
-        old_xml = old_xmls[old_idx] if old_idx is not None else None
-        new_xml = new_blocks[new_idx] if new_idx is not None else None
-
-        if old_xml is None and new_xml is not None:
-            x = ET.fromstring(new_xml)
-            ET.indent(x, "  ")
-            new_xml = ET.tostring(x, encoding="unicode")
-            diffs.append(
-                {
-                    "type": "added",
-                    "diff": new_xml,
-                }
+        old_sections_data = []
+        for section in ordered_old_sections:
+            blocks = (
+                session.execute(
+                    sqla.select(db.TextBlock)
+                    .where(db.TextBlock.section_id == section.id)
+                    .order_by(db.TextBlock.n)
+                )
+                .scalars()
+                .all()
             )
-        elif old_xml is not None and new_xml is None:
-            diffs.append(
-                {
-                    "type": "removed",
-                    "diff": old_xml,
-                }
-            )
-        elif old_xml != new_xml:
-            diffs.append(
-                {
-                    "type": "changed",
-                    "diff": diff_utils.revision_diff(old_xml, new_xml),
-                }
-            )
+            old_sections_data.append((section.slug, [(b.slug, b.xml) for b in blocks]))
 
-    parent_info = None
-    if config.parent_slug:
-        parent_text = session.execute(
-            sqla.select(db.Text).where(db.Text.slug == config.parent_slug)
-        ).scalar_one_or_none()
-        if parent_text:
-            parent_info = {"slug": parent_text.slug, "title": parent_text.title}
+        old_xml = _build_tei_xml(
+            existing_text.header or "",
+            old_sections_data,
+            existing_text.slug,
+            existing_text.language,
+        )
 
-    preview = {
+    diff_lines = _build_diff_lines(old_xml, new_xml)
+
+    preview_data = {
         "slug": config.slug,
         "title": config.title,
         "target": config.target,
         "is_new": existing_text is None,
-        "parent": parent_info,
-        "diffs": diffs,
+        "diff_lines": diff_lines,
     }
 
     return render_template(
         "proofing/projects/publish-preview.html",
         project=project_,
         text_slug=text_slug,
-        previews=[preview],  # Keep as list for template compatibility
+        preview=preview_data,
     )
 
 
@@ -317,37 +480,21 @@ def preview(project_slug, text_slug):
 @p2_required
 def create(project_slug, text_slug):
     """Create or update texts based on the specified publish config."""
-    config_page = lambda: redirect(
-        url_for("proofing.publish.config", slug=project_slug)
-    )
 
-    project_ = q.project(project_slug)
-    if project_ is None:
-        abort(404)
-    assert project_
-    if not project_.config:
-        flash("No publish configuration found. Please configure first.", "error")
-        return config_page()
-    try:
-        project_config = ProjectConfig.model_validate_json(project_.config)
-    except Exception:
-        flash("Could not validate project config.", "error")
-        return config_page()
-    config = next((c for c in project_config.publish if c.slug == text_slug), None)
-    if not config:
-        flash(f"No publish configuration found for text '{text_slug}'.", "error")
-        return config_page()
+    result = _resolve_publish_config(project_slug, text_slug)
+    if result is None:
+        return redirect(url_for("proofing.publish.config", slug=project_slug))
+    project_, config = result
 
     session = q.get_session()
     created_count = 0
     updated_count = 0
     texts_map = {}
 
-    with tempfile.NamedTemporaryFile(delete_on_close=False) as fp:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".xml") as fp:
         fp.close()
-        document_data = publishing_utils.create_tei_document(
-            project_, config, Path(fp.name)
-        )
+        tei_path = Path(fp.name)
+        document_data = publishing_utils.create_tei_document(project_, config, tei_path)
         header = ""
         _ns = "{http://www.tei-c.org/ns/1.0}"
         for event, elem in etree.iterparse(fp.name, events=("end",)):
@@ -358,228 +505,215 @@ def create(project_slug, text_slug):
                 header = ET.tostring(elem, encoding="unicode")
                 break
 
-        # Upload TEI XML to S3
-        tei_path = Path(fp.name)
-        tei_size = tei_path.stat().st_size
-        sha256_hash = hashlib.sha256()
-        with open(tei_path, "rb") as hash_f:
-            for chunk in iter(lambda: hash_f.read(4096), b""):
-                sha256_hash.update(chunk)
-        tei_checksum = sha256_hash.hexdigest()
-
-        export_slug = f"{config.slug}.xml"
-        bucket = current_app.config["S3_BUCKET"]
-        tei_s3 = S3Path(bucket, f"text-exports/{export_slug}")
-        tei_s3.upload_file(tei_path)
-
-    text = q.text(config.slug)
-    is_new_text = False
-    if not text:
-        text = db.Text(
-            slug=config.slug,
-            title=config.title,
-            published_at=datetime.now(UTC),
-            project_id=project_.id,
-        )
-        session.add(text)
-        session.flush()
-        is_new_text = True
-
-    text.header = header
-    text.project_id = project_.id
-    text.language = config.language
-    text.title = config.title
-
-    if config.author:
-        author = session.execute(
-            sqla.select(db.Author).where(db.Author.name == config.author)
-        ).scalar_one_or_none()
-        if not author:
-            author = db.Author(name=config.author, slug=slugify(config.author))
-            session.add(author)
-            session.flush()
-        text.author_id = author.id
-    else:
-        text.author_id = None
-
-    if config.genre:
-        genre = session.execute(
-            sqla.select(db.Genre).where(db.Genre.name == config.genre)
-        ).scalar_one_or_none()
-        if not genre:
-            genre = db.Genre(name=config.genre)
-            session.add(genre)
-            session.flush()
-        text.genre_id = genre.id
-    else:
-        text.genre_id = None
-
-    if SitePageStatus.R0.value in document_data.page_statuses:
-        text.status = TextStatus.P0
-    elif SitePageStatus.R1.value in document_data.page_statuses:
-        text.status = TextStatus.P1
-    else:
-        text.status = TextStatus.P2
-
-    existing_sections = {s.slug for s in text.sections}
-    doc_sections = {s.slug for s in document_data.sections}
-    section_map = {s.slug: s for s in text.sections}
-
-    if existing_sections != doc_sections:
-        new_sections = doc_sections - existing_sections
-        old_sections = existing_sections - doc_sections
-
-        for old_slug in old_sections:
-            old_section = next((s for s in text.sections if s.slug == old_slug), None)
-            if old_section:
-                session.delete(old_section)
-                del section_map[old_slug]
-
-        for new_slug in new_sections:
-            doc_section = next(
-                (s for s in document_data.sections if s.slug == new_slug), None
+    task_dispatched = False
+    try:
+        text = q.text(config.slug)
+        is_new_text = False
+        if not text:
+            text = db.Text(
+                slug=config.slug,
+                title=config.title,
+                published_at=datetime.now(UTC),
+                project_id=project_.id,
             )
-            if doc_section:
-                new_section = db.TextSection(
-                    text_id=text.id,
-                    slug=new_slug,
-                    title=new_slug,
-                )
-                session.add(new_section)
-                section_map[new_slug] = new_section
+            session.add(text)
+            session.flush()
+            is_new_text = True
 
-        session.flush()
+        text.header = header
+        text.project_id = project_.id
+        text.language = config.language
+        text.title = config.title
 
-    existing_blocks_list = (
-        session.execute(
-            sqla.select(db.TextBlock)
-            .where(db.TextBlock.text_id == text.id)
-            .order_by(db.TextBlock.n)
-        )
-        .scalars()
-        .all()
-    )
-
-    new_doc_blocks = []
-    block_sections = []
-    for doc_section in document_data.sections:
-        section = section_map[doc_section.slug]
-        for block in doc_section.blocks:
-            new_doc_blocks.append(block)
-            block_sections.append(section)
-
-    old_xmls = [b.xml for b in existing_blocks_list]
-    new_xmls = [b.xml for b in new_doc_blocks]
-    alignment = _align_sequences(old_xmls, new_xmls)
-
-    block_index = 0
-    for old_idx, new_idx in alignment:
-        if old_idx is not None and new_idx is not None:
-            block_index += 1
-            existing_block = existing_blocks_list[old_idx]
-            doc_block = new_doc_blocks[new_idx]
-            existing_block.slug = doc_block.slug
-            existing_block.xml = doc_block.xml
-            existing_block.n = block_index
-            existing_block.section_id = block_sections[new_idx].id
-            existing_block.page_id = doc_block.page_id
-        elif old_idx is not None:
-            session.delete(existing_blocks_list[old_idx])
+        if config.author:
+            author = session.execute(
+                sqla.select(db.Author).where(db.Author.name == config.author)
+            ).scalar_one_or_none()
+            if not author:
+                author = db.Author(name=config.author, slug=slugify(config.author))
+                session.add(author)
+                session.flush()
+            text.author_id = author.id
         else:
-            block_index += 1
-            doc_block = new_doc_blocks[new_idx]
-            new_block = db.TextBlock(
-                text_id=text.id,
-                section_id=block_sections[new_idx].id,
-                slug=doc_block.slug,
-                xml=doc_block.xml,
-                n=block_index,
-                page_id=doc_block.page_id,
-            )
-            session.add(new_block)
+            text.author_id = None
 
-    texts_map[config.slug] = text
-    if is_new_text:
-        created_count += 1
-    else:
-        updated_count += 1
+        if config.genre:
+            genre = session.execute(
+                sqla.select(db.Genre).where(db.Genre.name == config.genre)
+            ).scalar_one_or_none()
+            if not genre:
+                genre = db.Genre(name=config.genre)
+                session.add(genre)
+                session.flush()
+            text.genre_id = genre.id
+        else:
+            text.genre_id = None
 
-    session.flush()
+        if SitePageStatus.R0.value in document_data.page_statuses:
+            text.status = TextStatus.P0
+        elif SitePageStatus.R1.value in document_data.page_statuses:
+            text.status = TextStatus.P1
+        else:
+            text.status = TextStatus.P2
 
-    if config.parent_slug:
-        text = texts_map[config.slug]
-        parent_text = texts_map.get(config.parent_slug) or q.text(config.parent_slug)
-        if parent_text:
-            text.parent_id = parent_text.id
+        existing_sections = {s.slug for s in text.sections}
+        doc_sections = {s.slug for s in document_data.sections}
+        section_map = {s.slug: s for s in text.sections}
 
-    session.flush()
+        if existing_sections != doc_sections:
+            new_sections = doc_sections - existing_sections
+            old_sections = existing_sections - doc_sections
 
-    if config.parent_slug:
-        text = texts_map[config.slug]
-        parent_text = texts_map.get(config.parent_slug) or q.text(config.parent_slug)
-        if parent_text:
-            parent_blocks = (
-                session.execute(
-                    sqla.select(db.TextBlock)
-                    .where(db.TextBlock.text_id == parent_text.id)
-                    .order_by(db.TextBlock.n)
+            for old_slug in old_sections:
+                old_section = next(
+                    (s for s in text.sections if s.slug == old_slug), None
                 )
-                .scalars()
-                .all()
-            )
+                if old_section:
+                    session.delete(old_section)
+                    del section_map[old_slug]
 
-            child_blocks = (
-                session.execute(
-                    sqla.select(db.TextBlock)
-                    .where(db.TextBlock.text_id == text.id)
-                    .order_by(db.TextBlock.n)
+            for new_slug in new_sections:
+                doc_section = next(
+                    (s for s in document_data.sections if s.slug == new_slug), None
                 )
-                .scalars()
-                .all()
-            )
-
-            child_block_ids = [b.id for b in child_blocks]
-            if child_block_ids:
-                session.execute(
-                    sqla.delete(db.text_block_associations).where(
-                        db.text_block_associations.c.child_id.in_(child_block_ids)
+                if doc_section:
+                    new_section = db.TextSection(
+                        text_id=text.id,
+                        slug=new_slug,
+                        title=new_slug,
                     )
+                    session.add(new_section)
+                    section_map[new_slug] = new_section
+
+            session.flush()
+
+        existing_blocks_list = (
+            session.execute(
+                sqla.select(db.TextBlock)
+                .where(db.TextBlock.text_id == text.id)
+                .order_by(db.TextBlock.n)
+            )
+            .scalars()
+            .all()
+        )
+
+        new_doc_blocks = []
+        block_sections = []
+        for doc_section in document_data.sections:
+            section = section_map[doc_section.slug]
+            for block in doc_section.blocks:
+                new_doc_blocks.append(block)
+                block_sections.append(section)
+
+        old_xmls = [b.xml for b in existing_blocks_list]
+        new_xmls = [b.xml for b in new_doc_blocks]
+        alignment = _align_blocks(old_xmls, new_xmls)
+
+        block_index = 0
+        for old_idx, new_idx in alignment:
+            if old_idx is not None and new_idx is not None:
+                block_index += 1
+                existing_block = existing_blocks_list[old_idx]
+                doc_block = new_doc_blocks[new_idx]
+                existing_block.slug = doc_block.slug
+                existing_block.xml = doc_block.xml
+                existing_block.n = block_index
+                existing_block.section_id = block_sections[new_idx].id
+                existing_block.page_id = doc_block.page_id
+            elif old_idx is not None:
+                session.delete(existing_blocks_list[old_idx])
+            else:
+                block_index += 1
+                doc_block = new_doc_blocks[new_idx]
+                new_block = db.TextBlock(
+                    text_id=text.id,
+                    section_id=block_sections[new_idx].id,
+                    slug=doc_block.slug,
+                    xml=doc_block.xml,
+                    n=block_index,
+                    page_id=doc_block.page_id,
+                )
+                session.add(new_block)
+
+        texts_map[config.slug] = text
+        if is_new_text:
+            created_count += 1
+        else:
+            updated_count += 1
+
+        session.flush()
+
+        if config.parent_slug:
+            text = texts_map[config.slug]
+            parent_text = texts_map.get(config.parent_slug) or q.text(
+                config.parent_slug
+            )
+            if parent_text:
+                text.parent_id = parent_text.id
+
+        session.flush()
+
+        if config.parent_slug:
+            text = texts_map[config.slug]
+            parent_text = texts_map.get(config.parent_slug) or q.text(
+                config.parent_slug
+            )
+            if parent_text:
+                parent_blocks = (
+                    session.execute(
+                        sqla.select(db.TextBlock)
+                        .where(db.TextBlock.text_id == parent_text.id)
+                        .order_by(db.TextBlock.n)
+                    )
+                    .scalars()
+                    .all()
                 )
 
-            parent_blocks_by_slug = {b.slug: b for b in parent_blocks}
-            for child_block in child_blocks:
-                parent_block = parent_blocks_by_slug.get(child_block.slug)
-                if parent_block:
+                child_blocks = (
                     session.execute(
-                        sqla.insert(db.text_block_associations).values(
-                            parent_id=parent_block.id,
-                            child_id=child_block.id,
+                        sqla.select(db.TextBlock)
+                        .where(db.TextBlock.text_id == text.id)
+                        .order_by(db.TextBlock.n)
+                    )
+                    .scalars()
+                    .all()
+                )
+
+                child_block_ids = [b.id for b in child_blocks]
+                if child_block_ids:
+                    session.execute(
+                        sqla.delete(db.text_block_associations).where(
+                            db.text_block_associations.c.child_id.in_(child_block_ids)
                         )
                     )
 
-    # Create or update the XML export record
-    text_export = q.text_export(export_slug)
-    if text_export:
-        text_export.s3_path = tei_s3.path
-        text_export.size = tei_size
-        text_export.sha256_checksum = tei_checksum
-        text_export.updated_at = datetime.now(UTC)
-    else:
-        text_export = db.TextExport(
-            text_id=text.id,
-            slug=export_slug,
-            export_type="xml",
-            s3_path=tei_s3.path,
-            size=tei_size,
-            sha256_checksum=tei_checksum,
+                parent_blocks_by_slug = {b.slug: b for b in parent_blocks}
+                for child_block in child_blocks:
+                    parent_block = parent_blocks_by_slug.get(child_block.slug)
+                    if parent_block:
+                        session.execute(
+                            sqla.insert(db.text_block_associations).values(
+                                parent_id=parent_block.id,
+                                child_id=child_block.id,
+                            )
+                        )
+
+        session.commit()
+
+        upload_xml_export.delay(
+            text.id,
+            config.slug,
+            str(tei_path),
+            current_app.config["AMBUDA_ENVIRONMENT"],
         )
-        session.add(text_export)
+        task_dispatched = True
 
-    session.commit()
+        if created_count > 0:
+            flash(f"Created {created_count} text(s)", "success")
+        if updated_count > 0:
+            flash(f"Updated {updated_count} text(s)", "success")
 
-    if created_count > 0:
-        flash(f"Created {created_count} text(s)", "success")
-    if updated_count > 0:
-        flash(f"Updated {updated_count} text(s)", "success")
-
-    return redirect(url_for("proofing.publish.config", slug=project_slug))
+        return redirect(url_for("proofing.publish.config", slug=project_slug))
+    finally:
+        if not task_dispatched:
+            tei_path.unlink(missing_ok=True)

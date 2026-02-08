@@ -10,7 +10,7 @@
 {{ m.text_tabs(text=text, active='validate') }}
 
 <div class="prose">
-  <h2>Validation Report</h2>
+  <h2>{{ _('Validation Report') }}</h2>
 
   <div class="space-y-4 not-prose">
     {% for result in report.results %}

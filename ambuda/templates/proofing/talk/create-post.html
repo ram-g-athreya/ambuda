@@ -19,7 +19,7 @@
 <form method="POST">
   {{ form.csrf_token }}
   {{ m_talk.post(form.content) }}
-  <input type="submit" class="btn btn-submit" value="Create post">
+  <input type="submit" class="btn btn-submit" value="{{ _('Create post') }}">
 </form>
 
 {% endblock %}

@@ -22,7 +22,6 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-
 # Load dotenv early so that `_env` will work in the class definitions below.
 load_dotenv()
 
@@ -124,6 +123,12 @@ class BaseConfig:
 
     # Flask-WTF
 
+    # Flask-Limiter
+
+    #: Storage backend for rate limiting. Uses Redis in production, in-memory
+    #: for local development.
+    RATELIMIT_STORAGE_URI = _env("REDIS_URL", "memory://")
+
     #: If True, enable cross-site request forgery (CSRF) protection.
     #: This must be True in production.
     WTF_CSRF_ENABLED = True
@@ -187,6 +192,10 @@ class UnitTestConfig:
     #: Disable CSRF protection for unit tests, since the Flask test runner
     #: doesn't have good support for it.
     WTF_CSRF_ENABLED = False
+
+    #: Disable rate limiting in tests so existing tests pass unchanged.
+    RATELIMIT_ENABLED = False
+    RATELIMIT_STORAGE_URI = "memory://"
 
     RECAPTCHA_PUBLIC_KEY = "re-public"
     RECAPTCHA_PRIVATE_KEY = "re-private"

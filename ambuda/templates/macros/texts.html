@@ -6,26 +6,26 @@
 <header class="text-center my-16">
 {% if text.parent %}
   <h1 class="font-bold text-5xl x-deva">
-    {{ text.parent.title | devanagari }}
+    {{ text.parent.title | hk_to_user_script }}
   </h1>
   <p class="text-xl my-8 text-slate-500">(
     <a class="hover:underline" href="{{ url_for('texts.text', slug=text.parent.slug) }}">
       {{- text.title -}}
     </a>
     &mdash;
-    {% if text.language == "hi" %}Hindi{% endif %}
-    {% if text.language == "en" %}English{% endif %}
+    {% if text.language == "hi" %}{{ _('Hindi') }}{% endif %}
+    {% if text.language == "en" %}{{ _('English') }}{% endif %}
   )</p>
 {% else %}
   <h1 class="font-bold text-5xl x-deva">
-    {{ text.title | devanagari }}
+    {{ text.title | hk_to_user_script | devanagari_to_user_script }}
   </h1>
   {% if text.is_p0 %}
   <aside class="bg-red-100 rounded text-red-800 p-2 mt-8">
     {{ i.i_exclamation_circle() }}
     <p>
       <svg class="inline text-red-300" width="16" height="16"><use href="#exclamation-circle"></use></svg>
-      This text is <a class="underline" href="{{ url_for('about.unproofed_texts') }}">unproofed</a>.
+      {% trans url=url_for('about.unproofed_texts') %}This text is <a class="underline" href="{{ url }}">unproofed</a>.{% endtrans %}
     </p>
   </aside>
   {% endif %}
@@ -48,36 +48,38 @@
 
 {# List of all texts #}
 {% macro all_texts(text_entries) %}
-<ul>
+<ul class="divide-y divide-slate-200">
 {% for entry in text_entries %}
-<li class="even:bg-slate-50 p-2" data-title="{{ entry.text.title }}">
-  <h2 class="flex justify-between">
+<li class="py-3 px-2 hover:bg-slate-50 rounded" data-title="{{ entry.text.title }}">
+  <h2 class="flex justify-between items-baseline">
     <span>
       {% set url = url_for('texts.text', slug=entry.text.slug) %}
       <a href="{{ url }}" class="hover:underline text-xl">
-        {{- entry.text.title | devanagari -}}
+        {{- entry.text.title | hk_to_user_script | devanagari_to_user_script -}}
       </a>
       {% if entry.text.is_p0 %}
       {{ i.unproofed_text_icon() }}
       {% endif %}
     </span>
 
-    {% if entry.author or entry.genre %}
-    <span class="text-slate-500">
-      {% if entry.author %} {{ entry.author.name }} {% endif %}
+    {% if entry.author %}
+    <span class="text-sm text-slate-400">
+      <a href="{{ url_for('authors.author', slug=entry.author.slug) }}" class="hover:underline">
+        {{ entry.author.name }}
+      </a>
     </span>
     {% endif %}
   </h2>
 
   {% if entry.children %}
-  <ul class="list-disc mt-4 pl-4">
+  <ul class="mt-2 pl-4 space-y-1">
     {% for child in entry.children %}
       {% set url = url_for('texts.text', slug=child.text.slug) %}
-      <li>
+      <li class="text-sm text-slate-600">
         <a class="hover:underline" href="{{ url }}">
           {{ child.text.title }}
-          {% if child.text.language == "hi" %}(Hindi){% endif %}
-          {% if child.text.language == "en" %}(English){% endif %}
+          {% if child.text.language == "hi" %}({{ _('Hindi') }}){% endif %}
+          {% if child.text.language == "en" %}({{ _('English') }}){% endif %}
         </a>
       </li>
     {% endfor %}
@@ -93,8 +95,8 @@
   {{ i.i_exclamation_circle() }}
   {% for heading, entries in grouped_entries.items() %}
     {% if entries %}
-    <div data-section>
-      <h2 class="text-slate-400 font-bold text-3xl my-8">{{ heading }}</h2>
+    <div data-section class="mb-16">
+      <h2 class="text-sky-900 font-bold text-4xl text-center mt-16 mb-10">{{ heading | hk_to_user_script }}</h2>
       {{ all_texts(entries) }}
     </div>
     {% endif %}

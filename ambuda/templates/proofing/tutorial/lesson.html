@@ -1,5 +1,6 @@
 {% extends 'header-main-footer.html' %}
 
+{% block extra_scripts %}<script defer src="{{ asset('gen/proofing.js') }}"></script>{% endblock %}
 
 {% block title %}{{ _('Tutorial: %(title)s', title=lesson.title) }} | Ambuda{% endblock %}
 

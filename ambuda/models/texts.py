@@ -241,11 +241,14 @@ class Author(Base):
 
     __tablename__ = "authors"
 
-    # Primary key.
+    #: Primary key.
     id = pk()
-    # The author's name.
+    #: The author's name.
     name = Column(String, nullable=False)
+    #: The author's URL identifier.
     slug = Column(String, unique=True, nullable=False)
+    #: A markdown description of the author.
+    description = Column(_Text, nullable=True)
 
     def __str__(self):
         # Include slug because author names are not unique.

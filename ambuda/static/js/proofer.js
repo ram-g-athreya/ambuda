@@ -198,6 +198,7 @@ export default () => ({
   // Settings
   textZoom: 1,
   imageZoom: null,
+  imageZoomMode: 'manual',
   layout: 'image-right',
   viewMode: ViewType.Visual,
   // [transliteration] the source script
@@ -282,8 +283,20 @@ export default () => ({
     // Set `imageZoom` only after the viewer is fully initialized.
     this.imageViewer = initializeImageViewer(IMAGE_URL);
     this.imageViewer.addHandler('open', () => {
-      this.imageZoom = this.imageZoom || this.imageViewer.viewport.getHomeZoom();
-      this.imageViewer.viewport.zoomTo(this.imageZoom);
+      if (this.imageZoomMode === 'fit-width' || this.imageZoomMode === 'fit-height') {
+        // Defer fit calls until after OSD's initial home animation and browser layout
+        requestAnimationFrame(() => {
+          if (this.imageZoomMode === 'fit-width') {
+            this.imageViewer.viewport.fitHorizontally(true);
+          } else {
+            this.imageViewer.viewport.fitVertically(true);
+          }
+          this.imageZoom = this.imageViewer.viewport.getZoom();
+        });
+      } else {
+        this.imageZoom = this.imageZoom || this.imageViewer.viewport.getHomeZoom();
+        this.imageViewer.viewport.zoomTo(this.imageZoom);
+      }
     });
 
     // Use `.bind(this)` so that `this` in the function refers to this app and
@@ -392,6 +405,7 @@ export default () => ({
         // We can only get an accurate default zoom after the viewer is fully
         // initialized. See `init` for details.
         this.imageZoom = settings.imageZoom;
+        this.imageZoomMode = settings.imageZoomMode || this.imageZoomMode;
         this.layout = settings.layout || this.layout;
         this.viewMode = settings.viewMode || this.viewMode;
 
@@ -424,6 +438,7 @@ export default () => ({
     const settings = {
       textZoom: this.textZoom,
       imageZoom: this.imageZoom,
+      imageZoomMode: this.imageZoomMode,
       layout: this.layout,
       viewMode: this.viewMode,
       fromScript: this.fromScript,
@@ -504,6 +519,7 @@ export default () => ({
 
   setImageZoom(zoom) {
     this.imageZoom = zoom;
+    this.imageZoomMode = 'manual';
     this.imageViewer.viewport.zoomTo(zoom);
     this.saveSettings();
   },
@@ -513,11 +529,13 @@ export default () => ({
   fitImageWidth() {
     this.imageViewer.viewport.fitHorizontally();
     this.imageZoom = this.imageViewer.viewport.getZoom();
+    this.imageZoomMode = 'fit-width';
     this.saveSettings();
   },
   fitImageHeight() {
     this.imageViewer.viewport.fitVertically();
     this.imageZoom = this.imageViewer.viewport.getZoom();
+    this.imageZoomMode = 'fit-height';
     this.saveSettings();
   },
 

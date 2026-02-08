@@ -16,7 +16,7 @@
 <div class="prose">
 
 {% if exports %}
-<h2>Downloads</h2>
+<h2>{{ _('Downloads') }}</h2>
 <ul>
   {% for export in exports %}
   {% set label = export.export_config.label %}

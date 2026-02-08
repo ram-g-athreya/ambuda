@@ -7,8 +7,6 @@ from vidyut.kosha import Kosha, PadaEntry, PratipadikaEntry
 from vidyut.lipi import transliterate, Scheme
 from vidyut.prakriya import Lakara
 
-from ambuda.utils.kosha import get_kosha
-
 
 class AmbudaToken(BaseModel):
     form: str

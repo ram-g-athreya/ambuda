@@ -36,40 +36,73 @@
 
   <fieldset>
     <legend class="text-lg font-bold mt-8 mb-4">Basic information</legend>
-    <div class="bg-slate-100 p-4">
-      {{ mf.field(form.display_title) }}
-      <div class="my-2">
-        {{ mf.label(form.slug.label) }}
+    <div class="bg-slate-100 rounded p-4">
+      <div class="grid grid-cols-[8rem_1fr] gap-x-4 gap-y-3 text-sm items-center">
+        {{ form.display_title.label(class_="text-slate-500") }}
+        {{ form.display_title(class_="p-2 w-full rounded border border-slate-300") }}
+
+        {{ form.slug.label(class_="text-slate-500") }}
         <div class="flex gap-2">
-          {{ form.slug(class_="p-2 block w-full my-2", id="slug-field") }}
+          {{ form.slug(class_="p-2 w-full rounded border border-slate-300 flex-1", id="slug-field") }}
           <button type="button" class="btn btn-secondary whitespace-nowrap" onclick="regenerateSlug()">{{ _('Regenerate') }}</button>
         </div>
+
+        {% if current_user.is_p2 %}
+        {{ form.status.label(class_="text-slate-500") }}
+        {{ form.status(class_="p-2 w-full rounded border border-slate-300") }}
+        {% endif %}
+
+        {{ form.genre.label(class_="text-slate-500") }}
+        {{ form.genre(class_="p-2 w-full rounded border border-slate-300") }}
+
+        <div class="col-span-2 mt-2">
+          {{ form.description.label(class_="text-slate-500 mb-1 block") }}
+          {{ form.description(class_="border border-slate-300 p-2 w-full min-h-[200px] rounded") }}
+          {% set help_url = "https://commonmark.org/help/" %}
+          <p class="text-slate-500 mt-1 a-underline">{% trans %}
+            You can format this text with Markdown.
+            <a href="{{ help_url }}">Click here to learn more.</a>
+          {% endtrans %}</p>
+        </div>
+
+        <div class="col-span-2">
+          {{ form.page_numbers.label(class_="text-slate-500 mb-1 block") }}
+          {{ form.page_numbers(class_="border border-slate-300 p-2 w-full rounded") }}
+        </div>
       </div>
-      {% if current_user.is_p2 %}
-        {{ mf.field(form.status) }}
-      {% endif %}
-      {{ mf.field(form.genre) }}
-      {{ mf.markdown_field(form.description) }}
-      {{ mf.field(form.page_numbers) }}
     </div>
   </fieldset>
 
   <fieldset>
     <legend class="text-lg font-bold mt-8 mb-4">Book metadata</legend>
-    <div class="bg-slate-100 p-4">
-      {{ mf.field(form.print_title) }}
-      {{ mf.field(form.author) }}
-      {{ mf.field(form.editor) }}
-      {{ mf.field(form.publisher) }}
-      {{ mf.field(form.publication_year) }}
-      {{ mf.field(form.worldcat_link) }}
+    <div class="bg-slate-100 rounded p-4">
+      <div class="grid grid-cols-[8rem_1fr] gap-x-4 gap-y-3 text-sm items-center">
+        {{ form.print_title.label(class_="text-slate-500") }}
+        {{ form.print_title(class_="p-2 w-full rounded border border-slate-300") }}
+
+        {{ form.author.label(class_="text-slate-500") }}
+        {{ form.author(class_="p-2 w-full rounded border border-slate-300") }}
+
+        {{ form.editor.label(class_="text-slate-500") }}
+        {{ form.editor(class_="p-2 w-full rounded border border-slate-300") }}
+
+        {{ form.publisher.label(class_="text-slate-500") }}
+        {{ form.publisher(class_="p-2 w-full rounded border border-slate-300") }}
+
+        {{ form.publication_year.label(class_="text-slate-500") }}
+        {{ form.publication_year(class_="p-2 w-full rounded border border-slate-300") }}
+
+        {{ form.worldcat_link.label(class_="text-slate-500") }}
+        {{ form.worldcat_link(class_="p-2 w-full rounded border border-slate-300") }}
+      </div>
     </div>
   </fieldset>
 
   <fieldset>
     <legend class="text-lg font-bold mt-8 mb-4">Internal notes</legend>
-    <div class="bg-slate-100 p-4">
-      {{ mf.field(form.notes) }}
+    <div class="bg-slate-100 rounded p-4 text-sm">
+      {{ form.notes.label(class_="text-slate-500 mb-1 block") }}
+      {{ form.notes(class_="border border-slate-300 p-2 w-full rounded") }}
     </div>
   </fieldset>
 

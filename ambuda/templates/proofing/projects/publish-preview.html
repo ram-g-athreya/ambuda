@@ -10,15 +10,8 @@
 
 {% block extra_head %}
 <style>
-  .diff-content ins {
-    background-color: #d4edda;
-    text-decoration: none;
-    font-weight: 600;
-  }
-  .diff-content del {
-    background-color: #f8d7da;
-    text-decoration: line-through;
-  }
+  .diff-hi-del { background-color: #ffc0c0; text-decoration: line-through; }
+  .diff-hi-add { background-color: #acf2bd; text-decoration: none; }
 </style>
 {% endblock %}
 
@@ -29,91 +22,91 @@
 {{ m.project_header_nested('Publish Preview', project) }}
 {{ m.project_tabs(project=project, active='publish', is_mod=current_user.is_moderator) }}
 
-<div class="max-w-none">
-  <div class="prose">
-  <h2>Preview Changes</h2>
-
-  <p>
-    Review the changes that will be made when you publish. New texts will be created, and existing texts will be updated.
-  </p>
+<div class="not-prose max-w-none">
+  <div class="mb-4">
+    <h3 class="text-xl font-bold my-4">
+      {{ preview.title }}
+      {% if preview.is_new %}
+      <span class="inline-block ml-2 px-2 py-1 text-xs font-semibold rounded bg-green-100 text-green-800">NEW</span>
+      {% else %}
+      <span class="inline-block ml-2 px-2 py-1 text-xs font-semibold rounded bg-blue-100 text-blue-800">UPDATE</span>
+      {% endif %}
+    </h3>
+    <p class="text-sm text-slate-600">
+      Slug: <code>{{ preview.slug }}</code> | Target: <code>{{ preview.target }}</code>
+    </p>
   </div>
 
-  {% for preview in previews %}
-  <div class="not-prose border border-slate-300 rounded p-4 mb-6">
-    <div class="mb-4">
-      <h3 class="text-xl font-bold my-4">
-        {{ preview.title }}
-        {% if preview.is_new %}
-        <span class="inline-block ml-2 px-2 py-1 text-xs font-semibold rounded bg-green-100 text-green-800">NEW</span>
-        {% else %}
-        <span class="inline-block ml-2 px-2 py-1 text-xs font-semibold rounded bg-blue-100 text-blue-800">UPDATE</span>
-        {% endif %}
-      </h3>
-      <p class="text-sm text-slate-600">
-        Slug: <code>{{ preview.slug }}</code> | Target: <code>{{ preview.target }}</code>
-      </p>
-    </div>
-
-    {% if preview.is_new %}
-    <div class="bg-green-50 border border-green-200 rounded p-3 mb-3">
-      <p class="font-semibold text-green-800 mb-2">Creating New Text</p>
-      <p class="text-sm text-slate-700">
-        This will create a new text with {{ preview.diffs|length }} blocks.
-      </p>
-    </div>
-    {% else %}
-    <div class="bg-blue-50 border border-blue-200 rounded p-3 mb-3">
-      <p class="font-semibold text-blue-800 mb-2">Updating Existing Text</p>
-      <p class="text-sm text-slate-700">
-        {% if preview.diffs|length == 0 %}
-        No changes detected.
-        {% else %}
-        {{ preview.diffs|length }} block(s) changed.
-        {% endif %}
-      </p>
-    </div>
-    {% endif %}
-
-    {% if preview.diffs|length > 0 %}
-    <details class="mb-3" {% if not preview.is_new %}open{% endif %}>
-      <summary class="cursor-pointer font-semibold text-sm text-slate-700 hover:text-slate-900">
-        View changes ({{ preview.diffs|length }} block{{ 's' if preview.diffs|length != 1 else '' }})
-      </summary>
-      <div class="mt-2 max-h-96 overflow-y-auto space-y-3">
-        {% for diff in preview.diffs %}
-        <div class="border rounded p-3 {% if diff.type == 'added' %}bg-green-50 border-green-200{% elif diff.type == 'removed' %}bg-red-50 border-red-200{% else %}bg-yellow-50 border-yellow-200{% endif %}">
-          <div class="flex items-center gap-2 mb-2">
-            <span class="text-xs font-mono text-slate-600">Block #{{ loop.index }}</span>
-            <span class="px-2 py-0.5 text-xs font-semibold rounded {% if diff.type == 'added' %}bg-green-200 text-green-900{% elif diff.type == 'removed' %}bg-red-200 text-red-900{% else %}bg-yellow-200 text-yellow-900{% endif %}">
-              {{ diff.type|upper }}
-            </span>
-          </div>
-          <pre class="diff-content text-sm font-mono whitespace-pre-wrap {% if diff.type == 'added' %}text-green-900{% elif diff.type == 'removed' %}text-red-900{% else %}text-slate-900{% endif %}">
-            {%- if diff.type|upper == 'CHANGED' -%}
-              {{- diff.diff|safe -}}
-            {%- else -%}
-              {{- diff.diff -}}
-            {%- endif -%}
-          </pre >
-        </div>
+  {% if preview.diff_lines|length == 0 %}
+  <div class="bg-slate-50 border border-slate-200 rounded p-4 mb-4">
+    <p class="text-slate-600">No changes detected.</p>
+  </div>
+  {% else %}
+  <div class="border border-slate-300 rounded overflow-x-auto mb-4">
+    <table class="w-full font-mono text-xs leading-snug border-collapse">
+      <tbody>
+        {% for entry in preview.diff_lines %}
+        {% if entry.type == "context" %}
+        <tr>
+          <td class="w-[1%] min-w-[36px] text-right text-black/40 select-none px-1.5 align-top">{{ entry.new_no }}</td>
+          <td class="w-[1%] min-w-[16px] text-center select-none px-0.5 align-top"></td>
+          <td class="px-1.5 whitespace-pre-wrap break-all align-top">{{ entry.text }}</td>
+        </tr>
+        {% elif entry.type == "replace" %}
+        <tr class="bg-yellow-50">
+          <td class="w-[1%] min-w-[36px] text-right text-yellow-900/60 select-none px-1.5 bg-yellow-100 align-top">{{ entry.new_no }}</td>
+          <td class="w-[1%] min-w-[16px] text-center text-yellow-900/60 select-none px-0.5 bg-yellow-100 align-top">~</td>
+          <td class="px-1.5 whitespace-pre-wrap break-all align-top">{{ entry.html|safe }}</td>
+        </tr>
+        {% elif entry.type == "add" %}
+        <tr class="bg-green-50">
+          <td class="w-[1%] min-w-[36px] text-right text-green-900/60 select-none px-1.5 bg-green-100 align-top">{{ entry.new_no }}</td>
+          <td class="w-[1%] min-w-[16px] text-center text-green-900/60 select-none px-0.5 bg-green-100 align-top">+</td>
+          <td class="px-1.5 whitespace-pre-wrap break-all align-top">{{ entry.text }}</td>
+        </tr>
+        {% elif entry.type == "delete" %}
+        <tr class="bg-red-50">
+          <td class="w-[1%] min-w-[36px] text-right text-red-900/60 select-none px-1.5 bg-red-100 align-top">{{ entry.old_no }}</td>
+          <td class="w-[1%] min-w-[16px] text-center text-red-900/60 select-none px-0.5 bg-red-100 align-top">&minus;</td>
+          <td class="px-1.5 whitespace-pre-wrap break-all align-top">{{ entry.text }}</td>
+        </tr>
+        {% elif entry.type == "collapsed" %}
+        {% set collapse_id = loop.index %}
+        <tr data-collapse-id="{{ collapse_id }}">
+          <td colspan="3" class="bg-slate-50 text-center py-1 px-1.5">
+            <button type="button" onclick="expandCollapsed(this, {{ collapse_id }})"
+              class="bg-transparent border border-slate-300 rounded px-3 py-0.5 text-xs font-mono text-slate-500 cursor-pointer hover:bg-sky-50 hover:border-sky-400 hover:text-sky-700">
+              @@ {{ entry.count }} unchanged lines @@
+            </button>
+          </td>
+        </tr>
+        {% for line in entry.lines %}
+        <tr hidden data-collapsed-group="{{ collapse_id }}">
+          <td class="w-[1%] min-w-[36px] text-right text-black/40 select-none px-1.5 align-top">{{ line.new_no }}</td>
+          <td class="w-[1%] min-w-[16px] text-center select-none px-0.5 align-top"></td>
+          <td class="px-1.5 whitespace-pre-wrap break-all align-top">{{ line.text }}</td>
+        </tr>
         {% endfor %}
-      </div>
-    </details>
-    {% endif %}
+        {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
-  {% endfor %}
+  {% endif %}
 
-  <form method="POST" action="{{ url_for('proofing.publish.create', project_slug=project.slug, text_slug=text_slug) }}" class="not-prose mt-6 pt-4 border-t border-slate-300">
-    <div class="flex gap-3">
-      <button type="submit" class="btn btn-primary">
-        Publish
-      </button>
-    </div>
-
+  <form method="POST" action="{{ url_for('proofing.publish.create', project_slug=project.slug, text_slug=text_slug) }}" class="mt-6 pt-4 border-t border-slate-300">
+    <button type="submit" class="btn btn-primary">Publish</button>
     <p class="text-sm text-slate-600 mt-3">
       This action will create new texts or update existing ones with the content shown above.
     </p>
   </form>
 </div>
 
+<script>
+function expandCollapsed(button, id) {
+  button.closest('tr').remove();
+  var rows = document.querySelectorAll('tr[data-collapsed-group="' + id + '"]');
+  for (var i = 0; i < rows.length; i++) rows[i].hidden = false;
+}
+</script>
 {% endblock %}

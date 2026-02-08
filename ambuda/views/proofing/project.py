@@ -6,6 +6,7 @@ import uuid
 from datetime import UTC, datetime
 from xml.etree import ElementTree as ET
 
+import sqlalchemy as sqla
 from celery.result import GroupResult
 from flask import (
     Blueprint,
@@ -22,7 +23,6 @@ from flask_login import current_user, login_required
 from flask_wtf import FlaskForm
 from markupsafe import Markup, escape
 from pydantic import BaseModel, TypeAdapter
-import sqlalchemy as sqla
 from sqlalchemy import orm, select
 from werkzeug.exceptions import abort
 from werkzeug.utils import redirect
@@ -38,11 +38,12 @@ from ambuda import database as db
 from ambuda import queries as q
 from ambuda.enums import SitePageStatus
 from ambuda.models.proofing import ProjectStatus
+from ambuda.rate_limit import limiter
 from ambuda.tasks import app as celery_app
 from ambuda.tasks import batch_llm as batch_llm_tasks
 from ambuda.tasks import llm_structuring as llm_structuring_tasks
 from ambuda.tasks import ocr as ocr_tasks
-from ambuda.utils import project_utils, project_structuring
+from ambuda.utils import project_structuring, project_utils
 from ambuda.utils.llm_prompts import PRESET_PROMPTS
 from ambuda.utils.project_structuring import ProofBlock, ProofPage, ProofProject
 from ambuda.utils.revisions import add_revision
@@ -399,6 +400,40 @@ def download_as_xml(slug):
     return response
 
 
+@bp.route("/<slug>/download/project-xml")
+@login_required
+def download_as_project_xml(slug):
+    """Download the project as XML with per-page content and metadata."""
+    project_ = q.project(slug)
+    if project_ is None:
+        abort(404)
+
+    assert project_
+    root = ET.Element("project")
+
+    metadata = ET.SubElement(root, "metadata")
+    ET.SubElement(metadata, "name").text = project_.display_title or project_.slug
+    ET.SubElement(metadata, "pages").text = str(len(project_.pages))
+    ET.SubElement(metadata, "downloaded").text = datetime.now(UTC).isoformat()
+    ET.SubElement(metadata, "user").text = current_user.username
+
+    for p in project_.pages:
+        content = p.revisions[-1].content if p.revisions else ""
+        page_el = ET.SubElement(root, "page")
+        page_el.set("slug", p.slug)
+        page_el.text = content
+
+    xml_bytes = ET.tostring(root, encoding="unicode", xml_declaration=False)
+    xml_blob = '<?xml version="1.0" encoding="UTF-8"?>\n' + xml_bytes
+
+    response = make_response(xml_blob, 200)
+    response.mimetype = "text/xml"
+    response.headers["Content-Disposition"] = (
+        f'attachment; filename="{project_.slug}.xml"'
+    )
+    return response
+
+
 @bp.route("/<slug>/stats")
 @moderator_required
 def stats(slug):
@@ -419,6 +454,7 @@ def stats(slug):
 
 
 @bp.route("/<slug>/batch-ocr", methods=["GET", "POST"])
+@limiter.limit("3/hour", methods=["POST"])
 @p2_required
 def batch_ocr(slug):
     project_ = q.project(slug)
@@ -709,6 +745,7 @@ def parse_content(slug):
 
 
 @bp.route("/<slug>/batch-llm-structuring", methods=["GET", "POST"])
+@limiter.limit("3/hour", methods=["POST"])
 def batch_llm_structuring(slug):
     project_ = q.project(slug)
     if project_ is None:
@@ -779,6 +816,7 @@ def batch_llm_structuring_status(task_id):
 
 
 @bp.route("/<slug>/batch-llm", methods=["GET", "POST"])
+@limiter.limit("3/hour", methods=["POST"])
 @p2_required
 def batch_llm(slug):
     """Run a batch LLM prompt over a range of pages, storing results as suggestions."""

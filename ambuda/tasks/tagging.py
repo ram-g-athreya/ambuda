@@ -1,6 +1,7 @@
 """Background tasks for batch tagging with Dharmamitra."""
 
 import functools
+import logging
 import re
 import time
 from collections import deque
@@ -22,7 +23,7 @@ from ambuda.utils import dharmamitra as dm_utils
 from ambuda.utils.kosha import get_kosha
 
 
-# Dharmamitra rate limit is 100 sentences per minute
+# Dharmamitra rate limit is 10 sentences per minute
 DHARMAMITRA_MAX_QPS = 100 / 60.0
 
 
@@ -61,9 +62,9 @@ def to_plain_text_iast_sentences(blob: str) -> list[str]:
 
     xml = ET.fromstring(blob)
     for el in xml.iter():
-        el.tag = None
-        if el.tag in {"sic"}:
+        if el.tag in {"sic", "note", "ref"}:
             el.text = ""
+        el.tag = None
     clean_blob = ET.tostring(xml, encoding="unicode")
     clean_blob = re.sub("[0-9?!]", "", clean_blob)
 
@@ -106,6 +107,16 @@ def _tag_block_inner(
         ).scalar_one_or_none()
         if not block:
             return _block_error(f"Block {block_id} not found.")
+
+        existing = session.execute(
+            select(db.TokenBlock).filter_by(block_id=block_id)
+        ).scalar_one_or_none()
+        if existing and existing.version > 0:
+            return {
+                "status": "skipped",
+                "block_id": block_id,
+                "reason": "Block already has token data",
+            }
 
         sentences_iast = to_plain_text_iast_sentences(block.xml)
 
@@ -162,6 +173,7 @@ def _tag_block_inner(
                 version=token_block.version,
                 author_id=bot_user.id,
                 block_id=block_id,
+                session=session,
             )
             return {
                 "status": "success",
@@ -183,7 +195,7 @@ def tag_text(
 
     # Load one instance, use in all tasks.
     with get_db_session(app_env) as (session, query, config_obj):
-        kosha = get_kosha()
+        kosha = get_kosha(config_obj.VIDYUT_DATA_DIR)
         text = query.text(text_slug)
         if not text:
             return _error(f"Text {text_slug} not found")
@@ -215,10 +227,20 @@ def tag_text(
                 },
             )
 
-            resp = _tag_block_inner(app_env, text_slug, block.id, kosha)
+            try:
+                resp = _tag_block_inner(app_env, text_slug, block.id, kosha)
+            except Exception as e:
+                logging.exception("Failed to tag %s/%s", text_slug, block.slug)
+                resp = {"status": "error", "error": str(e)}
 
             results["processed"] += 1
             if resp["status"] == "success":
+                logging.info(
+                    "Tagged %s/%s (%d tokens)",
+                    text_slug,
+                    block.slug,
+                    resp.get("tokens", 0),
+                )
                 results["success"] += 1
             elif resp["status"] == "skipped":
                 results["skipped"] += 1

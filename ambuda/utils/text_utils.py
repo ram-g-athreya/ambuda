@@ -66,23 +66,26 @@ def create_text_entries() -> list[TextEntry]:
 def create_grouped_text_entries() -> dict[str, list[TextEntry]]:
     _d = lambda x: transliterate(x, Scheme.HarvardKyoto, Scheme.Devanagari)
 
-    headings = {
-        _d("upaniSat"): _d("vedAH"),
-        _d("itihAsaH"): _d("itihAsau"),
-        _d("kAvyam"): _d("kAvyAni"),
-        _d("stotram"): _d("stotrANi"),
+    # Map genre name (Devanagari, as stored in DB) -> heading display value (HK)
+    genre_to_heading = {
+        _d("upaniSat"): "vedAH",
+        _d("itihAsaH"): "itihAsau",
+        _d("kAvyam"): "kAvyAni",
+        _d("stotram"): "stotrANi",
     }
 
+    fallback_heading = "anye granthAH"
+
     grouped_entries = {}
-    for heading in headings.values():
+    for heading in genre_to_heading.values():
         grouped_entries[heading] = []
-    grouped_entries[_d("anye granthAH")] = []
+    grouped_entries[fallback_heading] = []
 
     for entry in create_text_entries():
         heading = None
         if entry.genre:
-            heading = headings.get(entry.genre.name)
+            heading = genre_to_heading.get(entry.genre.name)
         if heading is None:
-            heading = _d("anye granthAH")
+            heading = fallback_heading
         grouped_entries[heading].append(entry)
     return grouped_entries

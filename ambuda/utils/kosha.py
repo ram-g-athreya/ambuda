@@ -1,10 +1,8 @@
-import functools
 from pathlib import Path
 
-from flask import current_app
 from vidyut.kosha import Kosha
 
 
-def get_kosha():
+def get_kosha(vidyut_data_dir: str):
     """Load a kosha (no singleton, for throwaway instances in celery)."""
-    return Kosha(Path(current_app.config["VIDYUT_DATA_DIR"]) / "kosha")
+    return Kosha(Path(vidyut_data_dir) / "kosha")

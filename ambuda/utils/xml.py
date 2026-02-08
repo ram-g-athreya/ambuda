@@ -300,8 +300,6 @@ def _handle_tei_choice(el: ET.Element):
         for seg in el:
             if seg.attrib.get(attr_lang) == "sa":
                 seg.attrib["class"] = "s-chaya"
-
-        print(ET.tostring(el, encoding="unicode"))
     else:
         # sic / corr -- taken care of, as <sic> is just deleted.
         pass

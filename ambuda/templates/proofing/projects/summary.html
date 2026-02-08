@@ -41,27 +41,19 @@
   <h2>{{ pgettext("project", "About") }}</h2>
 </div>
 
-<div class="bg-slate-100 p-4 w-2/3">
-<table class="w-full">
-  <tr>
-    <th class="text-left">{{ _('Title') }}</th>
-    <td class="text-right">{{ project.display_title or _("(none)") }}</td>
-  </tr>
-  <tr>
-    <th class="text-left">{{ _('Author') }}</th>
-    <td class="text-right">{{ project.author or _("(none)") }}</td>
-  </tr>
-  <tr>
-    <th class="text-left">{{ _('Editor') }}</th>
-    <td class="text-right">{{ project.editor or _("(none)") }}</td></tr>
-  <tr>
-    <th class="text-left">{{ _('Publisher') }}</th>
-    <td class="text-right">{{ project.publisher or _("(none)") }}</td></tr>
-  <tr>
-    <th class="text-left">{{ _('Publication year') }}</th>
-    <td class="text-right">{{ project.publication_year or _("(none)") }}</td>
-  </tr>
-</table>
+<div class="bg-slate-100 rounded p-4">
+  <dl class="grid grid-cols-[8rem_1fr] gap-x-4 gap-y-2 text-sm">
+    <dt class="text-slate-500">{{ _('Title') }}</dt>
+    <dd>{{ project.display_title or _("(none)") }}</dd>
+    <dt class="text-slate-500">{{ _('Author') }}</dt>
+    <dd>{{ project.author or _("(none)") }}</dd>
+    <dt class="text-slate-500">{{ _('Editor') }}</dt>
+    <dd>{{ project.editor or _("(none)") }}</dd>
+    <dt class="text-slate-500">{{ _('Publisher') }}</dt>
+    <dd>{{ project.publisher or _("(none)") }}</dd>
+    <dt class="text-slate-500">{{ _('Publication year') }}</dt>
+    <dd>{{ project.publication_year or _("(none)") }}</dd>
+  </dl>
 </div>
 
 <div class="prose">

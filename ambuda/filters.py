@@ -3,6 +3,8 @@
 from datetime import datetime, UTC
 
 from dateutil.relativedelta import relativedelta
+from flask import session
+from jinja2 import pass_context
 from vidyut.lipi import transliterate, Scheme
 from markdown_it import MarkdownIt
 
@@ -28,6 +30,28 @@ def slp_to_devanagari(s: str) -> str:
 def devanagari(s: str) -> str:
     """HK to Devanagari."""
     return transliterate(s, Scheme.HarvardKyoto, Scheme.Devanagari)
+
+
+@pass_context
+def hk_to_user_script(_ctx, s: str) -> str:
+    """@pass_context prevents constant-folding in Jinja."""
+    script_name = session.get("script", "Devanagari")
+    try:
+        scheme = Scheme.from_string(script_name)
+    except ValueError:
+        scheme = Scheme.Devanagari
+    return transliterate(s, Scheme.HarvardKyoto, scheme)
+
+
+@pass_context
+def devanagari_to_user_script(_ctx, s: str) -> str:
+    """@pass_context prevents constant-folding in Jinja."""
+    script_name = session.get("script", "Devanagari")
+    try:
+        scheme = Scheme.from_string(script_name)
+    except ValueError:
+        scheme = Scheme.Devanagari
+    return transliterate(s, Scheme.Devanagari, scheme)
 
 
 def roman(s: str) -> str:

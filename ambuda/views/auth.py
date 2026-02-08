@@ -16,19 +16,20 @@ Max lengths:
 
 import secrets
 import sys
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 
 from flask import Blueprint, flash, redirect, render_template, url_for
 from flask_babel import lazy_gettext as _l
 from flask_login import current_user, login_required, login_user, logout_user
 from flask_wtf import FlaskForm, RecaptchaField
+from sqlalchemy import select
 from wtforms import BooleanField, EmailField, PasswordField, StringField
 from wtforms import validators as val
 
 import ambuda.queries as q
 from ambuda import database as db
 from ambuda import mail
-from sqlalchemy import select
+from ambuda.rate_limit import limiter
 
 bp = Blueprint("auth", __name__)
 
@@ -42,8 +43,7 @@ MAX_USERNAME_LEN = 64
 
 # token lifetime
 MAX_TOKEN_LIFESPAN_IN_HOURS = 24
-# FIXME: redirect to site.index once user accounts are more useful.
-POST_AUTH_ROUTE = "proofing.index"
+POST_AUTH_ROUTE = "site.index"
 
 
 def _create_reset_token(user_id) -> str:
@@ -198,6 +198,7 @@ class ResetPasswordFromTokenForm(FlaskForm):
 
 
 @bp.route("/register", methods=["GET", "POST"])
+@limiter.limit("5/hour", methods=["POST"])
 def register():
     if current_user.is_authenticated:
         logout_if_not_ok()
@@ -223,6 +224,7 @@ def register():
 
 
 @bp.route("/sign-in", methods=["GET", "POST"])
+@limiter.limit("10/15minutes", methods=["POST"])
 def sign_in():
     if current_user.is_authenticated:
         logout_if_not_ok()
@@ -254,6 +256,7 @@ def sign_out():
 
 
 @bp.route("/reset-password", methods=["GET", "POST"])
+@limiter.limit("12/hour", methods=["POST"])
 def get_reset_password_token():
     """Email the user a password reset link."""
     form = ResetPasswordForm()
@@ -267,11 +270,9 @@ def get_reset_password_token():
             mail.send_reset_password_link(
                 username=user.username, email=user.email, raw_token=raw_token
             )
-            return render_template("auth/reset-password-post.html", email=user.email)
-        else:
-            flash(
-                "Sorry, the email address you provided is not associated with any of our acounts."
-            )
+        # Always show the same response regardless of whether the email exists,
+        # to prevent account enumeration.
+        return render_template("auth/reset-password-post.html", email=email)
 
     # Override the default message ("The response parameter is missing.")
     # for better UX.
@@ -282,6 +283,7 @@ def get_reset_password_token():
 
 
 @bp.route("/reset-password/<username>/<raw_token>", methods=["GET", "POST"])
+@limiter.limit("5/hour", methods=["POST"])
 def reset_password_from_token(username, raw_token):
     """Reset password after the user clicks a reset link."""
     msg_invalid = "Sorry, this reset password link isn't valid. Please try again."
@@ -327,6 +329,7 @@ def reset_password_from_token(username, raw_token):
 
 
 @bp.route("/change-password", methods=["GET", "POST"])
+@limiter.limit("5/hour", methods=["POST"])
 @login_required
 def change_password():
     form = ChangePasswordForm()

@@ -2,6 +2,7 @@
 {% import "macros/proofing.html" as m %}
 {% import "macros/components.html" as mc %}
 
+{% block extra_scripts %}<script defer src="{{ asset('gen/proofing.js') }}"></script>{% endblock %}
 
 {# Render a radiobutton as a clickable button. #}
 {% macro _status(field, peer_classes) %}
@@ -109,6 +110,17 @@
   }">
     {# Left-aligned (standard commands) #}
     <div class="flex">
+
+    <div class="relative">
+      {{ _dropdown_button('project', _('Project')) }}
+      <div x-show="activeMenu === 'project'" @mousedown.outside="activeMenu = null" class="dropdown-pane w-48">
+        <a class="dropdown-item" href="{{ url_for('proofing.project.summary', slug=project.slug) }}">{{ _('Index') }}</a>
+        <a class="dropdown-item" href="{{ url_for('proofing.project.edit', slug=project.slug) }}">{{ _('Edit') }}</a>
+        {% if current_user.is_authenticated %}
+        <a class="dropdown-item" href="{{ url_for('proofing.project.download_as_project_xml', slug=project.slug) }}">{{ _('Export XML') }}</a>
+        {% endif %}
+      </div>
+    </div>
 
     <div class="relative">
       {{ _dropdown_button('page', _('Page')) }}
@@ -288,21 +300,21 @@
 
         <div class="border border-slate-300 rounded-full px-3 py-1 bg-slate-50">
           <div class="flex items-center gap-1">
-            <button type="button" class="p-1 hover:bg-slate-200 rounded" @click="increaseTextSize()" title="Increase text size">A<sup>+</sup></button>
-            <button type="button" class="p-1 hover:bg-slate-200 rounded" @click="resetTextSize()" title="Reset text size">A<sup>&#x00b0;</sup></button>
-            <button type="button" class="p-1 hover:bg-slate-200 rounded" @click="decreaseTextSize()" title="Decrease text size">A<sup>-</sup></button>
+            <button type="button" class="p-1 hover:bg-slate-200 rounded" @click="increaseTextSize()" title="{{ _('Increase text size') }}">A<sup>+</sup></button>
+            <button type="button" class="p-1 hover:bg-slate-200 rounded" @click="resetTextSize()" title="{{ _('Reset text size') }}">A<sup>&#x00b0;</sup></button>
+            <button type="button" class="p-1 hover:bg-slate-200 rounded" @click="decreaseTextSize()" title="{{ _('Decrease text size') }}">A<sup>-</sup></button>
           </div>
         </div>
 
         <div class="border border-slate-300 rounded-full px-3 py-1 bg-slate-50">
           <div class="flex items-center gap-1">
-            <button type="button" class="p-1 hover:bg-slate-200 rounded" @click="increaseImageZoom" title="Zoom in">&#x1f50d;<sup>+</sup></button>
-            <button type="button" class="p-1 hover:bg-slate-200 rounded" @click="resetImageZoom" title="Reset zoom">&#x1f50d;&#x00b0;</button>
-            <button type="button" class="p-1 hover:bg-slate-200 rounded" @click="decreaseImageZoom" title="Zoom out">&#x1f50d;<sup>-</sup></button>
-            <button type="button" class="p-1 hover:bg-slate-200 rounded" @click="fitImageWidth" title="Fit width to container">&#x2194;</button>
-            <button type="button" class="p-1 hover:bg-slate-200 rounded" @click="fitImageHeight" title="Fit height to container">&#x2195;</button>
-            <button type="button" id="osd-rotate-left" class="p-1 hover:bg-slate-200 rounded" title="Rotate left">&#x27f2;</button>
-            <button type="button" id="osd-rotate-right" class="p-1 hover:bg-slate-200 rounded" title="Rotate right">&#x27f3;</button>
+            <button type="button" class="p-1 hover:bg-slate-200 rounded" @click="increaseImageZoom" title="{{ _('Zoom in') }}">&#x1f50d;<sup>+</sup></button>
+            <button type="button" class="p-1 hover:bg-slate-200 rounded" @click="resetImageZoom" title="{{ _('Reset zoom') }}">&#x1f50d;&#x00b0;</button>
+            <button type="button" class="p-1 hover:bg-slate-200 rounded" @click="decreaseImageZoom" title="{{ _('Zoom out') }}">&#x1f50d;<sup>-</sup></button>
+            <button type="button" class="p-1 hover:bg-slate-200 rounded" @click="fitImageWidth" title="{{ _('Fit width to container') }}">&#x2194;</button>
+            <button type="button" class="p-1 hover:bg-slate-200 rounded" @click="fitImageHeight" title="{{ _('Fit height to container') }}">&#x2195;</button>
+            <button type="button" id="osd-rotate-left" class="p-1 hover:bg-slate-200 rounded" title="{{ _('Rotate left') }}">&#x27f2;</button>
+            <button type="button" id="osd-rotate-right" class="p-1 hover:bg-slate-200 rounded" title="{{ _('Rotate right') }}">&#x27f3;</button>
           </div>
         </div>
       </div>

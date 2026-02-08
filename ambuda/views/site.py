@@ -1,6 +1,6 @@
 """Views for basic site pages."""
 
-from flask import Blueprint, redirect, render_template, session, url_for
+from flask import Blueprint, redirect, render_template, request, session, url_for
 
 from ambuda import queries as q
 from ambuda.consts import LOCALES
@@ -66,6 +66,12 @@ def request_too_large(e):
 @bp.app_errorhandler(500)
 def internal_server_error(e):
     return render_template("500.html"), 500
+
+
+@bp.route("/script/<slug>")
+def set_script(slug=None):
+    session["script"] = slug
+    return redirect(request.referrer or url_for("site.index"))
 
 
 @bp.route("/language/<slug>")
