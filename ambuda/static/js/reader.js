@@ -241,6 +241,8 @@ export default () => ({
   /** Transliterate a Devanagari string to the user's preferred script. */
   transliterateStr(devanagariStr) {
     if (!devanagariStr) return '';
+    // BUGFIX for vidyut/sanscript interop -- needs more investigation.
+    const to = (this.script in Sanscript.schemes) ? this.script : 'devanagari';
     return Sanscript.t(devanagariStr, Script.Devanagari, this.script);
   },
 

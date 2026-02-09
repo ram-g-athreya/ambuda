@@ -34,10 +34,13 @@ function transliterateHTMLString(source: string, to: string) {
   const from = 'devanagari';
   if (from === to) return source;
 
+  // BUGFIX for vidyut/sanscript interop -- needs more investigation.
+  const toFix = (to in Sanscript.schemes) ? to : 'devanagari';
+
   const $div = document.createElement('div');
   $div.innerHTML = source;
   $div.querySelectorAll('*').forEach((elem) => {
-    forEachSanskritTextNode(elem, (s) => Sanscript.t(s, from, to));
+    forEachSanskritTextNode(elem, (s) => Sanscript.t(s, from, toFix));
   });
   return $div.innerHTML;
 }
