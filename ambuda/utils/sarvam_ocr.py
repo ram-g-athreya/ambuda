@@ -74,8 +74,8 @@ def run(
                             coordinates = block['coordinates']
                             x1, y1, x2, y2 = coordinates
                             text = post_process(text).strip()
-                            buf.append(f'{text}\n')
+                            buf.append(text)
                             bounding_boxes.append((x1, y1, x2, y2, text))
 
-    text_content = post_process("".join(buf)).strip()
+    text_content = post_process("\n".join(buf)).strip()
     return OcrResponse(text_content=text_content, bounding_boxes=bounding_boxes)
