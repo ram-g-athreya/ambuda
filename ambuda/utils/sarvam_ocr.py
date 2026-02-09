@@ -70,7 +70,8 @@ def run(
                         sorted_blocks = sorted(data.get('blocks', []), key=lambda x: x['block_id'])
 
                         for block in sorted_blocks:
-                            text, coordinates = block
+                            text = block['text']
+                            coordinates = block['coordinates']
                             x1, y1, x2, y2 = coordinates
                             text = post_process(text)
                             buf.append(f'{text}\n')
