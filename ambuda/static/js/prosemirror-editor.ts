@@ -342,7 +342,8 @@ class BlockView {
     this.controlsDOM.appendChild(this.typeSelect);
 
     // Attribute inputs
-    const text = this.createLabeledInput('text', 'text=', 'text', 'w-20');
+    // TODO: rename `text` to `label` in storage.
+    const text = this.createLabeledInput('text', 'label=', 'label', 'w-20');
     this.textLabel = text.label;
     this.textInput = text.input;
     this.textLabel.style.display = this.editor.showAdvancedOptions ? '' : 'none';

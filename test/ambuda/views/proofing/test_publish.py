@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from ambuda.models.proofing import PublishConfig, LanguageCode
+from ambuda.models.proofing import ProjectConfig, PublishConfig, LanguageCode
 from ambuda.views.proofing.publish import _validate_slug
 
 
@@ -65,3 +65,16 @@ def test_language_codes_have_labels():
     for code in LanguageCode:
         assert isinstance(code.label, str)
         assert len(code.label) > 0
+
+
+def test_publish_config_post__invalid_filter(rama_client):
+    config = ProjectConfig(
+        publish=[
+            PublishConfig(slug="test-text", title="Test", target="(image 1"),
+        ]
+    )
+    resp = rama_client.post(
+        "/proofing/test-project/publish",
+        data={"config": config.model_dump_json()},
+    )
+    assert resp.status_code == 302

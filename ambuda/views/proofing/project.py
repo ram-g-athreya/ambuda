@@ -43,6 +43,7 @@ from ambuda.tasks import app as celery_app
 from ambuda.tasks import batch_llm as batch_llm_tasks
 from ambuda.tasks import llm_structuring as llm_structuring_tasks
 from ambuda.tasks import ocr as ocr_tasks
+from ambuda.tasks import projects as project_tasks
 from ambuda.utils import project_structuring, project_utils
 from ambuda.utils.llm_prompts import PRESET_PROMPTS
 from ambuda.utils.project_structuring import ProofBlock, ProofPage, ProofProject
@@ -962,9 +963,10 @@ def admin(slug):
     form = DeleteProjectForm()
     if form.validate_on_submit():
         if form.slug.data == slug:
-            session = q.get_session()
-            session.delete(project_)
-            session.commit()
+            project_tasks.delete_project.delay(
+                project_slug=slug,
+                app_environment=current_app.config["AMBUDA_ENVIRONMENT"],
+            )
 
             flash(f"Deleted project {slug}")
             return redirect(url_for("proofing.index"))

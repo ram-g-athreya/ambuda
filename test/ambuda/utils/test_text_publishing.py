@@ -351,7 +351,172 @@ def test_create_tei_document__autoincrement_with_mixed_types():
     )
 
 
+def _make_block(image_number, block_index, page_xml_str):
+    page_xml = ET.fromstring(page_xml_str)
+    revision = MockRevision(id=1, page_id=1, content=page_xml_str)
+    return s.IndexedBlock(
+        revision=revision,
+        image_number=image_number,
+        block_index=block_index,
+        page_xml=page_xml,
+    )
+
+
 def test_filter_parse__rejects_deeply_nested_sexp():
     deeply_nested = "(" * 50 + "and" + ")" * 50
     with pytest.raises(ValueError, match="levels deep"):
         s.Filter(deeply_nested)
+
+
+def test_filter_parse__rejects_missing_open_paren():
+    with pytest.raises(ValueError, match="must start with"):
+        s.Filter("image 1")
+
+
+def test_filter_parse__rejects_missing_close_paren():
+    with pytest.raises(ValueError, match="Missing closing parenthesis"):
+        s.Filter("(image 1")
+
+
+def test_filter_matches__image_single():
+    f = s.Filter("(image 3)")
+    block2 = _make_block(2, 0, "<page><p>a</p></page>")
+    block3 = _make_block(3, 0, "<page><p>a</p></page>")
+    block4 = _make_block(4, 0, "<page><p>a</p></page>")
+    assert not f.matches(block2)
+    assert f.matches(block3)
+    assert not f.matches(block4)
+
+
+def test_filter_matches__image_range():
+    f = s.Filter("(image 2 4)")
+    block1 = _make_block(1, 0, "<page><p>a</p></page>")
+    block2 = _make_block(2, 0, "<page><p>a</p></page>")
+    block3 = _make_block(3, 0, "<page><p>a</p></page>")
+    block4 = _make_block(4, 0, "<page><p>a</p></page>")
+    block5 = _make_block(5, 0, "<page><p>a</p></page>")
+    assert not f.matches(block1)
+    assert f.matches(block2)
+    assert f.matches(block3)
+    assert f.matches(block4)
+    assert not f.matches(block5)
+
+
+def test_filter_matches__page_alias():
+    f = s.Filter("(page 3)")
+    block3 = _make_block(3, 0, "<page><p>a</p></page>")
+    assert f.matches(block3)
+
+
+def test_filter_matches__label():
+    f = s.Filter("(label foo)")
+    block_match = _make_block(1, 0, '<page><p text="foo">a</p></page>')
+    block_no_match = _make_block(1, 0, '<page><p text="bar">a</p></page>')
+    block_no_attr = _make_block(1, 0, "<page><p>a</p></page>")
+    assert f.matches(block_match)
+    assert not f.matches(block_no_match)
+    assert not f.matches(block_no_attr)
+
+
+def test_filter_matches__label_second_block():
+    f = s.Filter("(label bar)")
+    block = _make_block(1, 1, '<page><p text="foo">a</p><p text="bar">b</p></page>')
+    assert f.matches(block)
+
+
+def test_filter_matches__tag():
+    f = s.Filter("(tag p)")
+    block_p = _make_block(1, 0, "<page><p>a</p></page>")
+    block_verse = _make_block(1, 0, "<page><verse>a</verse></page>")
+    assert f.matches(block_p)
+    assert not f.matches(block_verse)
+
+
+def test_filter_matches__and():
+    f = s.Filter("(and (image 2 4) (tag p))")
+    block_match = _make_block(3, 0, "<page><p>a</p></page>")
+    block_wrong_tag = _make_block(3, 0, "<page><verse>a</verse></page>")
+    block_wrong_image = _make_block(1, 0, "<page><p>a</p></page>")
+    assert f.matches(block_match)
+    assert not f.matches(block_wrong_tag)
+    assert not f.matches(block_wrong_image)
+
+
+def test_filter_matches__or():
+    f = s.Filter("(or (image 1) (image 3))")
+    block1 = _make_block(1, 0, "<page><p>a</p></page>")
+    block2 = _make_block(2, 0, "<page><p>a</p></page>")
+    block3 = _make_block(3, 0, "<page><p>a</p></page>")
+    assert f.matches(block1)
+    assert not f.matches(block2)
+    assert f.matches(block3)
+
+
+def test_filter_matches__not():
+    f = s.Filter("(not (image 2))")
+    block1 = _make_block(1, 0, "<page><p>a</p></page>")
+    block2 = _make_block(2, 0, "<page><p>a</p></page>")
+    block3 = _make_block(3, 0, "<page><p>a</p></page>")
+    assert f.matches(block1)
+    assert not f.matches(block2)
+    assert f.matches(block3)
+
+
+def test_filter_matches__empty_and():
+    f = s.Filter("(and)")
+    block = _make_block(1, 0, "<page><p>a</p></page>")
+    assert f.matches(block)
+
+
+def test_filter_matches__image_single_with_label():
+    f = s.Filter("(image 3:foo)")
+    page = '<page><p text="foo">a</p><p text="bar">b</p></page>'
+    assert f.matches(_make_block(3, 0, page))
+    assert not f.matches(_make_block(3, 1, page))
+    assert not f.matches(_make_block(2, 0, '<page><p text="foo">a</p></page>'))
+
+
+def test_filter_matches__image_range_with_labels():
+    f = s.Filter("(image 2:start 4:end)")
+    assert not f.matches(_make_block(1, 0, '<page><p text="x">a</p></page>'))
+    page2 = (
+        '<page><p text="before">a</p><p text="start">b</p><p text="after">c</p></page>'
+    )
+    assert not f.matches(_make_block(2, 0, page2))
+    assert f.matches(_make_block(2, 1, page2))
+    assert f.matches(_make_block(2, 2, page2))
+    assert f.matches(_make_block(3, 0, "<page><p>a</p></page>"))
+    page4 = '<page><p text="end">a</p><p text="after">b</p></page>'
+    assert f.matches(_make_block(4, 0, page4))
+    assert not f.matches(_make_block(4, 1, page4))
+    assert not f.matches(_make_block(5, 0, "<page><p>a</p></page>"))
+
+
+def test_filter_matches__image_label_start_plain_end():
+    f = s.Filter("(image 2:mid 4)")
+    page2 = '<page><p text="before">a</p><p text="mid">b</p></page>'
+    assert not f.matches(_make_block(2, 0, page2))
+    assert f.matches(_make_block(2, 1, page2))
+    assert f.matches(_make_block(4, 0, "<page><p>a</p></page>"))
+
+
+def test_filter_matches__image_plain_start_label_end():
+    f = s.Filter("(image 2 4:mid)")
+    assert f.matches(_make_block(2, 0, "<page><p>a</p></page>"))
+    page4 = '<page><p text="mid">a</p><p text="after">b</p></page>'
+    assert f.matches(_make_block(4, 0, page4))
+    assert not f.matches(_make_block(4, 1, page4))
+
+
+def test_filter_matches__image_label_not_found():
+    f = s.Filter("(image 3:nonexistent)")
+    block = _make_block(3, 0, '<page><p text="other">a</p></page>')
+    assert not f.matches(block)
+
+
+def test_filter_matches__image_label_picks_first():
+    f = s.Filter("(image 3:dup)")
+    page = '<page><p text="dup">a</p><p text="dup">b</p><p>c</p></page>'
+    assert f.matches(_make_block(3, 0, page))
+    assert not f.matches(_make_block(3, 1, page))
+    assert not f.matches(_make_block(3, 2, page))

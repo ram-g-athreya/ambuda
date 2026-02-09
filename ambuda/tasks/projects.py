@@ -448,3 +448,77 @@ def create_projects_from_gdrive_folder(
         creator_id=creator_id,
         task_status=task_status,
     )
+
+
+def delete_project_inner(
+    *,
+    project_slug: str,
+    app_environment: str,
+    engine=None,
+):
+    """Delete a project and all its associated S3 assets.
+
+    Removes page images from S3, then the source PDF, then the project
+    record itself (which cascade-deletes pages, revisions, and the board).
+
+    :param project_slug: slug identifying the project to delete.
+    :param app_environment: the app environment, e.g. ``"development"``.
+    :param engine: optional SQLAlchemy engine for tests.
+    """
+    with get_db_session(app_environment, engine=engine) as (session, query, config_obj):
+        stmt = select(db.Project).filter_by(slug=project_slug)
+        project = session.scalars(stmt).first()
+        if not project:
+            raise ValueError(f'Project "{project_slug}" not found.')
+
+        s3_bucket = config_obj.S3_BUCKET
+
+        if s3_bucket:
+            # 1. Delete all page images from S3.
+            pages_stmt = select(db.Page).filter_by(project_id=project.id)
+            pages = session.scalars(pages_stmt).all()
+
+            for page in pages:
+                try:
+                    page.s3_path(s3_bucket).delete()
+                    logging.info(f"Deleted page image {page.uuid} from S3.")
+                except Exception as e:
+                    logging.warning(
+                        f"Could not delete page image {page.uuid} from S3: {e}"
+                    )
+
+            # 2. Delete the source PDF from S3.
+            try:
+                project.s3_path(s3_bucket).delete()
+                logging.info(f"Deleted project PDF for {project_slug} from S3.")
+            except Exception as e:
+                logging.warning(
+                    f"Could not delete project PDF for {project_slug} from S3: {e}"
+                )
+
+        # 3. Delete the project (cascades to pages, revisions, board).
+        try:
+            session.delete(project)
+            session.commit()
+            logging.info(f"Deleted project {project_slug} from database.")
+        except Exception as e:
+            session.rollback()
+            logging.error(f"Error deleting project {project_slug} from database: {e}")
+            raise
+
+
+@app.task(bind=True)
+def delete_project(
+    self,
+    *,
+    project_slug: str,
+    app_environment: str,
+):
+    """Delete a project and all its associated S3 assets.
+
+    For argument details, see `delete_project_inner`.
+    """
+    delete_project_inner(
+        project_slug=project_slug,
+        app_environment=app_environment,
+    )

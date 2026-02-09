@@ -128,6 +128,21 @@ class Filter:
 
         self.predicate = parse_list()
 
+    @staticmethod
+    def _parse_image_spec(spec: str) -> tuple[int, str | None]:
+        if ":" in spec:
+            num, label = spec.split(":", 1)
+            return int(num), label
+        else:
+            return int(spec), None
+
+    @staticmethod
+    def _find_label_index(page_xml, label: str) -> int | None:
+        for i, el in enumerate(page_xml):
+            if el.attrib.get("text") == label:
+                return i
+        return None
+
     def matches(self, block: IndexedBlock) -> bool:
         """Return whether `block` matches this filter's condition.
 
@@ -137,14 +152,30 @@ class Filter:
         def _matches(sexp):
             try:
                 key = sexp[0]
-                # New filters should prefer "image" instead of "page".
                 if key == "image" or key == "page":
-                    start = sexp[1]
+                    start_image, start_label = Filter._parse_image_spec(sexp[1])
                     try:
-                        end = sexp[2]
-                        return int(start) <= block.image_number <= int(end)
+                        end_image, end_label = Filter._parse_image_spec(sexp[2])
                     except IndexError:
-                        return block.image_number == int(start)
+                        end_image, end_label = start_image, start_label
+
+                    if (
+                        block.image_number < start_image
+                        or block.image_number > end_image
+                    ):
+                        return False
+
+                    if block.image_number == start_image and start_label is not None:
+                        idx = Filter._find_label_index(block.page_xml, start_label)
+                        if idx is None or block.block_index < idx:
+                            return False
+
+                    if block.image_number == end_image and end_label is not None:
+                        idx = Filter._find_label_index(block.page_xml, end_label)
+                        if idx is None or block.block_index > idx:
+                            return False
+
+                    return True
                 if key == "label":
                     return (
                         block.page_xml[block.block_index].attrib.get("text") == sexp[1]

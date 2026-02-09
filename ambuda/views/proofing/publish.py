@@ -24,6 +24,7 @@ from werkzeug.exceptions import abort
 from werkzeug.utils import redirect
 
 import ambuda.utils.text_publishing as publishing_utils
+from ambuda.utils.text_publishing import Filter
 from ambuda import database as db
 from ambuda import queries as q
 from ambuda.enums import SitePageStatus
@@ -324,6 +325,20 @@ def config(slug):
             if slug_error:
                 flash(slug_error, "error")
                 return default()
+
+        for pc in new_config.publish:
+            target = pc.target or ""
+            try:
+                if target.startswith("("):
+                    Filter(target)
+                else:
+                    Filter(f"(label {target})")
+            except ValueError as e:
+                flash(
+                    f"Invalid filter for '{pc.slug}': {e}",
+                    "error",
+                )
+                return redirect(url_for("proofing.publish.config", slug=slug))
 
         session = q.get_session()
         try:
