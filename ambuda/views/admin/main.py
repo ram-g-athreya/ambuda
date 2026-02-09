@@ -182,6 +182,11 @@ MODEL_CONFIG = [
                 slug="export-projects",
                 handler=tasks.export_projects,
             ),
+            Task(
+                name="Regenerate pages",
+                slug="regenerate-pages",
+                handler=tasks.regenerate_pages,
+            ),
         ],
         display_field="slug",
         enum_fields={"status": ProjectStatus},

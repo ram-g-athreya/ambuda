@@ -6,6 +6,7 @@ import os
 import json
 import re
 import hashlib
+import shutil
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -23,6 +24,17 @@ from ambuda import database as db
 from ambuda.utils.s3 import S3Path
 from ambuda.tasks import app
 from ambuda.tasks.utils import CeleryTaskStatus, TaskStatus, get_db_session
+
+
+def _save_page_image(pdf_page, output_path: Path, dpi: int = 200):
+    """Render a single PDF page to a JPG file.
+
+    :param pdf_page: a ``fitz.Page`` object.
+    :param output_path: where to write the image.
+    :param dpi: resolution for rendering.
+    """
+    pix = pdf_page.get_pixmap(dpi=dpi)
+    pix.pil_save(str(output_path), optimize=True)
 
 
 def _split_pdf_into_pages(
@@ -44,9 +56,8 @@ def _split_pdf_into_pages(
         page_uuid = str(uuid.uuid4())
         page_uuids.append(page_uuid)
 
-        pix = page.get_pixmap(dpi=200)
         output_path = output_dir / f"{page_uuid}.jpg"
-        pix.pil_save(output_path, optimize=True)
+        _save_page_image(page, output_path)
         task_status.progress(n, doc.page_count)
 
     return page_uuids
@@ -521,4 +532,98 @@ def delete_project(
     delete_project_inner(
         project_slug=project_slug,
         app_environment=app_environment,
+    )
+
+
+def regenerate_project_pages_inner(
+    *,
+    project_slug: str,
+    app_environment: str,
+    task_status: TaskStatus,
+    engine=None,
+):
+    """Re-render page images for an existing project from its source PDF.
+
+    Downloads the project's PDF, re-renders each page as a JPG using the
+    existing page UUIDs, and uploads the new images to replace the old ones.
+
+    :param project_slug: slug identifying the project.
+    :param app_environment: the app environment, e.g. ``"development"``.
+    :param task_status: tracks progress on the task.
+    :param engine: optional SQLAlchemy engine for tests.
+    """
+    with get_db_session(app_environment, engine=engine) as (session, query, config_obj):
+        stmt = select(db.Project).filter_by(slug=project_slug)
+        project = session.scalars(stmt).first()
+        if not project:
+            raise ValueError(f'Project "{project_slug}" not found.')
+
+        pages_stmt = (
+            select(db.Page).filter_by(project_id=project.id).order_by(db.Page.order)
+        )
+        pages = session.scalars(pages_stmt).all()
+        if not pages:
+            raise ValueError(f'Project "{project_slug}" has no pages.')
+
+        s3_bucket = config_obj.S3_BUCKET
+
+        temp_dir = Path(tempfile.mkdtemp(prefix=f"ambuda_regen_{project_slug}_"))
+        pdf_path = temp_dir / "source.pdf"
+
+        try:
+            if not s3_bucket:
+                raise ValueError("No S3 bucket configured.")
+
+            s3_pdf_path = project.s3_path(s3_bucket)
+            if not s3_pdf_path.exists():
+                raise ValueError(
+                    f'Source PDF not found in S3 for project "{project_slug}".'
+                )
+            s3_pdf_path.download_file(str(pdf_path))
+
+            doc = fitz.open(pdf_path)
+            if doc.page_count != len(pages):
+                logging.warning(
+                    f"PDF has {doc.page_count} pages but project has {len(pages)} "
+                    f"pages in the database; rendering min({doc.page_count}, {len(pages)})."
+                )
+                raise ValueError(
+                    f"PDF length and project length don't match ({doc.page_count} != {len(pages)})"
+                )
+
+            num_pages = doc.page_count
+            task_status.progress(0, num_pages)
+            for i in range(num_pages):
+                page_obj = pages[i]
+                image_path = temp_dir / f"{page_obj.uuid}.jpg"
+                _save_page_image(doc[i], image_path)
+                page_obj.s3_path(s3_bucket).upload_file(str(image_path))
+                image_path.unlink()
+                task_status.progress(i + 1, num_pages)
+
+            logging.info(
+                f"Regenerated {num_pages} page images for project {project_slug}."
+            )
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    task_status.success(len(pages), project_slug)
+
+
+@app.task(bind=True)
+def regenerate_project_pages(
+    self,
+    *,
+    project_slug: str,
+    app_environment: str,
+):
+    """Re-render page images for an existing project from its source PDF.
+
+    For argument details, see `regenerate_project_pages_inner`.
+    """
+    task_status = CeleryTaskStatus(self)
+    regenerate_project_pages_inner(
+        project_slug=project_slug,
+        app_environment=app_environment,
+        task_status=task_status,
     )

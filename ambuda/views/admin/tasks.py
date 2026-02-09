@@ -30,6 +30,7 @@ from ambuda.tasks.text_exports import (
     delete_text_export,
     create_all_exports_for_text,
 )
+from ambuda.tasks.projects import regenerate_project_pages
 from ambuda.utils.tei_parser import parse_document
 
 _UPLOAD_MAX_SIZE = 128 * 1024 * 1024
@@ -662,6 +663,34 @@ def delete_exports(model_name, selected_ids: list | None = None):
 
     flash(
         f"Started {task_count} deletion task(s) for {len(selected_ids)} export(s)",
+        "success",
+    )
+    return redirect(url_for("admin.list_model", model_name=model_name))
+
+
+def regenerate_pages(model_name, selected_ids: list | None = None):
+    """Batch action to regenerate page images for selected projects."""
+    if not selected_ids:
+        flash("No projects selected", "error")
+        return redirect(url_for("admin.list_model", model_name=model_name))
+
+    session = q.get_session()
+    app_environment = current_app.config["AMBUDA_ENVIRONMENT"]
+
+    task_count = 0
+    for project_id in selected_ids:
+        project = session.get(db.Project, int(project_id))
+        if not project:
+            continue
+
+        regenerate_project_pages.delay(
+            project_slug=project.slug,
+            app_environment=app_environment,
+        )
+        task_count += 1
+
+    flash(
+        f"Started page regeneration for {task_count} project(s).",
         "success",
     )
     return redirect(url_for("admin.list_model", model_name=model_name))
