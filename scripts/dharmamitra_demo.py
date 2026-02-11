@@ -28,7 +28,9 @@ def main():
     for sentence_result in results:
         print(f"Sentence: {sentence_result['sentence']}")
         for token in sentence_result["grammatical_analysis"]:
-            print(f"  {token['unsandhied']:20s} lemma={token['lemma']:15s} tag={token['tag']}")
+            print(
+                f"  {token['unsandhied']:20s} lemma={token['lemma']:15s} tag={token['tag']}"
+            )
 
     print()
     print("OK: Dharmamitra API is responding.")

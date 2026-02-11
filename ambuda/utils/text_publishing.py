@@ -507,6 +507,8 @@ def _create_tei_sections_and_blocks(
             if "speaker" in data:
                 # TODO: support other `speaker` settings.
                 active_sp = None
+            if "div.n" in data:
+                div_n = data["div.n"]
             continue
 
         # Whether the block should merge into the next of the same type.
@@ -535,6 +537,9 @@ def _create_tei_sections_and_blocks(
             block_ns[tei_xml.tag] = str(n)
         else:
             n = _get_next_n(block_ns, tei_xml.tag)
+            if div_n:
+                n = f"{div_n}.{n}"
+
             tei_xml.attrib["n"] = n
             block_ns[tei_xml.tag] = n
 

@@ -106,6 +106,7 @@ def test_validate_verse_number_if_exists():
     assert validation_result.num_total == 0
     assert len(validation_result.errors) == 0
 
+
 def test_validate_chandas():
     # Happy path
     xml = _get_xml_from_string(
@@ -115,7 +116,7 @@ def test_validate_chandas():
     assert validation_result.num_ok == 3
     assert validation_result.num_total == 3
     assert len(validation_result.errors) == 0
-    
+
     # Satyameva Jayate should fail
     xml = _get_xml_from_string(
         '<doc><div><lg n="lg1"><l>सत्यमेव जयते</l></lg></div></doc>'

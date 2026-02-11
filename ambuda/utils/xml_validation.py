@@ -126,7 +126,7 @@ PROOFING_XML_VALIDATION_SPEC = {
     BlockType.IGNORE: ValidationSpec(
         children=CORE_INLINE_TYPES, attrib={"lang", "text"}
     ),
-    BlockType.METADATA: ValidationSpec(children=set(), attrib=set()),
+    BlockType.METADATA: ValidationSpec(children=set(), attrib={"text"}),
     **{
         tag: ValidationSpec(children=set(InlineType), attrib=set())
         for tag in InlineType

@@ -260,27 +260,33 @@ def page_save_api(project_slug, page_slug):
                     version=int(version),
                     author_id=current_user.id,
                 )
-                return _jsonify_response(PageSaveResponse(
-                    ok=True,
-                    message="Saved changes.",
-                    new_version=new_version,
-                    new_status=status,
-                ))
+                return _jsonify_response(
+                    PageSaveResponse(
+                        ok=True,
+                        message="Saved changes.",
+                        new_version=new_version,
+                        new_status=status,
+                    )
+                )
             else:
-                return _jsonify_response(PageSaveResponse(
-                    ok=True,
-                    message="Skipped save. (No changes made.)",
-                    new_version=int(version),
-                    new_status=status,
-                ))
+                return _jsonify_response(
+                    PageSaveResponse(
+                        ok=True,
+                        message="Skipped save. (No changes made.)",
+                        new_version=int(version),
+                        new_status=status,
+                    )
+                )
         except EditError:
             conflict = cur.revisions[-1]
-            return _jsonify_response(PageSaveResponse(
-                ok=False,
-                message="Edit conflict. Please incorporate the changes below:",
-                conflict_content=conflict.content,
-                new_version=cur.version,
-            ))
+            return _jsonify_response(
+                PageSaveResponse(
+                    ok=False,
+                    message="Edit conflict. Please incorporate the changes below:",
+                    conflict_content=conflict.content,
+                    new_version=cur.version,
+                )
+            )
     elif current_user.is_authenticated:
         latest_revision = cur.revisions[-1] if cur.revisions else None
         if latest_revision is None:
@@ -303,12 +309,14 @@ def page_save_api(project_slug, page_slug):
         )
         session.add(suggestion)
         session.commit()
-        return _jsonify_response(PageSaveResponse(
-            ok=True,
-            message="Your suggestion has been submitted for review.",
-            new_version=int(version),
-            new_status=cur.status.name,
-        ))
+        return _jsonify_response(
+            PageSaveResponse(
+                ok=True,
+                message="Your suggestion has been submitted for review.",
+                new_version=int(version),
+                new_status=cur.status.name,
+            )
+        )
     else:
         return _jsonify_response(
             PageSaveResponse(

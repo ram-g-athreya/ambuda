@@ -10,7 +10,7 @@ import ambuda.database as db
 from ambuda.utils.xml_validation import validate_tei_xml
 
 # Whitelist of words if they exist in a line then we ignore chandas errors
-CHANDAS_WHITELIST = ['उवाच']
+CHANDAS_WHITELIST = ["उवाच"]
 
 # pass, fail, warning
 
@@ -136,6 +136,7 @@ def validate_verse_number_if_exists(block: ET.Element) -> ValidationResult:
                     ret.incr_ok()
     return ret
 
+
 @validation_rule(desc="Validate chandas")
 def validate_chandas(block: ET.Element) -> ValidationResult:
     ret = ValidationResult()
@@ -145,13 +146,16 @@ def validate_chandas(block: ET.Element) -> ValidationResult:
     if len(results.result.line) > 0:
         for line in results.result.line:
             ret.incr_total()
-            if line.result.found or any(w in line.result.line.split() for w in CHANDAS_WHITELIST):
+            if line.result.found or any(
+                w in line.result.line.split() for w in CHANDAS_WHITELIST
+            ):
                 ret.incr_ok()
             else:
-                ret.add_error(f'No valid chandas detected for line {line.result.line}')
+                ret.add_error(f"No valid chandas detected for line {line.result.line}")
     else:
-        ret.add_error(f'No valid chandas detected for text {clean_text}')
+        ret.add_error(f"No valid chandas detected for text {clean_text}")
     return ret
+
 
 RULES = [
     validate_all_blocks_have_unique_n,
