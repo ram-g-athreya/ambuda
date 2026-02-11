@@ -4,6 +4,9 @@ Previously, API routes were scattered across individual view modules that
 imported this blueprint. They are now co-located here for discoverability.
 """
 
+import dataclasses
+from dataclasses import dataclass
+
 import defusedxml.ElementTree as DET
 from flask import (
     Blueprint,
@@ -20,11 +23,14 @@ from sqlalchemy import select
 
 from ambuda import database as db
 from ambuda import queries as q
+from ambuda.enums import SitePageStatus
 from ambuda.rate_limit import limiter
 from ambuda.utils import google_ocr, llm_structuring, xml
 from ambuda.utils import word_parses as parse_utils
 from ambuda.utils.parse_alignment import align_text_with_parse
 from ambuda.utils.project_structuring import ProofPage, split_plain_text_to_blocks
+from ambuda.utils.revisions import EditError, add_revision
+from ambuda.utils.xml_validation import validate_proofing_xml
 from ambuda.views.proofing.decorators import p2_required
 
 bp = Blueprint("api", __name__)
@@ -42,6 +48,15 @@ class AutoStructureRequest(BaseModel):
     match_stage: bool = False
     match_speaker: bool = False
     match_chaya: bool = False
+
+
+@dataclass
+class PageSaveResponse:
+    ok: bool
+    message: str
+    new_version: int | None = None
+    new_status: str | None = None
+    conflict_content: str | None = None
 
 
 @bp.route("/ocr/<project_slug>/<page_slug>/")
@@ -170,6 +185,137 @@ def page_history_api(project_slug, page_slug):
         )
 
     return jsonify({"revisions": revisions})
+
+
+@bp.route("/proofing/<project_slug>/<page_slug>/page-data")
+def page_data_api(project_slug, page_slug):
+    """Return page data as JSON for SPA navigation."""
+    from ambuda.views.proofing.page import _get_page_context, _get_page_data_dict
+
+    ctx = _get_page_context(project_slug, page_slug)
+    if ctx is None:
+        abort(404)
+
+    assert ctx
+    data = _get_page_data_dict(ctx, ctx.project)
+    data["canSaveDirectly"] = current_user.is_authenticated and current_user.is_p1
+    return jsonify(data)
+
+
+def _jsonify_response(resp: PageSaveResponse, status_code: int = 200):
+    d = {k: v for k, v in dataclasses.asdict(resp).items() if v is not None}
+    return jsonify(d), status_code
+
+
+@bp.route("/proofing/<project_slug>/<page_slug>/save", methods=["POST"])
+def page_save_api(project_slug, page_slug):
+    """Save page edits via AJAX. Returns JSON response."""
+    import uuid
+
+    from ambuda.views.proofing.page import _get_page_context
+
+    ctx = _get_page_context(project_slug, page_slug)
+    if ctx is None:
+        return _jsonify_response(
+            PageSaveResponse(ok=False, message="Page not found."), 404
+        )
+
+    assert ctx
+    cur = ctx.cur
+
+    content = request.form.get("content", "")
+    version = request.form.get("version", "")
+    status = request.form.get("status", "")
+    summary = request.form.get("summary", "")
+    explanation = request.form.get("explanation", "")
+
+    if not content:
+        return _jsonify_response(
+            PageSaveResponse(ok=False, message="Content is required.")
+        )
+
+    # Validate XML
+    xml_errors = validate_proofing_xml(content)
+    if xml_errors:
+        messages = [e.message for e in xml_errors]
+        return _jsonify_response(
+            PageSaveResponse(ok=False, message="; ".join(messages))
+        )
+
+    can_save_directly = current_user.is_authenticated and current_user.is_p1
+
+    if can_save_directly:
+        cur_content = cur.revisions[-1].content if cur.revisions else None
+        content_has_changed = cur_content != content
+        status_has_changed = cur.status.name != status
+        has_changed = content_has_changed or status_has_changed
+
+        try:
+            if has_changed:
+                new_version = add_revision(
+                    cur,
+                    summary=summary,
+                    content=content,
+                    status=status,
+                    version=int(version),
+                    author_id=current_user.id,
+                )
+                return _jsonify_response(PageSaveResponse(
+                    ok=True,
+                    message="Saved changes.",
+                    new_version=new_version,
+                    new_status=status,
+                ))
+            else:
+                return _jsonify_response(PageSaveResponse(
+                    ok=True,
+                    message="Skipped save. (No changes made.)",
+                    new_version=int(version),
+                    new_status=status,
+                ))
+        except EditError:
+            conflict = cur.revisions[-1]
+            return _jsonify_response(PageSaveResponse(
+                ok=False,
+                message="Edit conflict. Please incorporate the changes below:",
+                conflict_content=conflict.content,
+                new_version=cur.version,
+            ))
+    elif current_user.is_authenticated:
+        latest_revision = cur.revisions[-1] if cur.revisions else None
+        if latest_revision is None:
+            return _jsonify_response(
+                PageSaveResponse(
+                    ok=False,
+                    message="Cannot suggest edits on a page with no revisions.",
+                )
+            )
+
+        session = q.get_session()
+        suggestion = db.Suggestion(
+            project_id=ctx.project.id,
+            page_id=cur.id,
+            revision_id=latest_revision.id,
+            user_id=current_user.id,
+            batch_id=str(uuid.uuid4()),
+            content=content,
+            explanation=explanation,
+        )
+        session.add(suggestion)
+        session.commit()
+        return _jsonify_response(PageSaveResponse(
+            ok=True,
+            message="Your suggestion has been submitted for review.",
+            new_version=int(version),
+            new_status=cur.status.name,
+        ))
+    else:
+        return _jsonify_response(
+            PageSaveResponse(
+                ok=False, message="You must be logged in to save changes."
+            ),
+            401,
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -86,7 +86,7 @@ class Text(Base):
     # The parent text that this text corresponds to.
     parent = relationship("Text", remote_side=[id], backref="children")
     # The exports associated with this text.
-    exports = relationship("TextExport", backref="text")
+    exports = relationship("TextExport", backref="text", cascade="delete")
 
     # DEPRECATED parse data
     block_parses = relationship("BlockParse", backref="text")

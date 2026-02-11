@@ -43,6 +43,7 @@ B = s.ProofBlock
                 "note",
                 "add",
                 "ellipsis",
+                "quote",
             ]
         ],
         # ERR: unknown or unexpected tag

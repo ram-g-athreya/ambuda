@@ -1,8 +1,27 @@
 import { $ } from '@/core.ts';
 import Proofer from '@/proofer';
 
+const mockPageState = {
+  projectSlug: 'my-project',
+  projectTitle: 'My Project',
+  pageSlug: 'my-page',
+  prevSlug: null,
+  nextSlug: null,
+  pageNumber: '1',
+  numPages: 10,
+  status: 'reviewed-0',
+  version: 1,
+  hasEdits: true,
+  isR0: true,
+  canSaveDirectly: false,
+  content: '',
+  imageUrl: 'IMAGE_URL',
+  ocrBoundingBoxes: '',
+  editUrl: '/proofing/my-project/my-page/',
+};
+
 const sampleHTML = `
-<div>
+<div data-page-state='${JSON.stringify(mockPageState)}'>
   <textarea id="content"></textarea>
   <div id="prosemirror-editor"></div>
 </div>
@@ -10,8 +29,6 @@ const sampleHTML = `
 
 // Can't modify existing `window.location` -- delete it so that we can mock it.
 delete window.location;
-window.IMAGE_URL = 'IMAGE_URL';
-window.OCR_BOUNDING_BOXES = '';
 window.OpenSeadragon = (_) => ({
   addHandler: jest.fn((_, callback) => callback()),
   world: { getItemAt: jest.fn(() => null) },
@@ -52,7 +69,7 @@ window.fetch = jest.fn(async (url) => {
   if (url.includes('error')) {
     return { ok: false };
   }
-  const segments = url.split('/');
+  const segments = url.replace(/\/+$/, '').split('/');
   const page = segments.pop();
   return {
     ok: true,
@@ -62,6 +79,12 @@ window.fetch = jest.fn(async (url) => {
 navigator.clipboard = {
   writeText: jest.fn(),
 };
+
+function createProofer() {
+  const p = Proofer();
+  p.$el = document.querySelector('[data-page-state]');
+  return p;
+}
 
 beforeEach(() => {
   window.location = null;
@@ -73,7 +96,7 @@ beforeEach(() => {
 // -- Init & settings --
 
 test('Proofer can be created and initialized', () => {
-  const p = Proofer();
+  const p = createProofer();
   p.init();
   expect(p.textZoom).toBe(1);
   expect(p.imageZoom).toBe(0.5);
@@ -140,18 +163,17 @@ test('onBeforeUnload returns null when no changes', () => {
 // -- Fetch & OCR --
 
 test('runOCR fetches and sets content', async () => {
-  const p = Proofer();
+  const p = createProofer();
   p.init();
-  window.location = new URL('https://ambuda.org/proofing/my-project/my-page');
   await p.runOCR();
   expect(mockEditor.setText).toHaveBeenCalledWith('text for my-page');
   expect($('#content').value).toBe('text for my-page');
 });
 
 test('runOCR handles server error', async () => {
-  const p = Proofer();
+  const p = createProofer();
   p.init();
-  window.location = new URL('https://ambuda.org/proofing/error');
+  p.pageState.projectSlug = 'error';
   await p.runOCR();
   expect(mockEditor.setText).toHaveBeenCalledWith('(server error)');
 });
@@ -159,7 +181,7 @@ test('runOCR handles server error', async () => {
 // -- Image zoom --
 
 test('increaseImageZoom multiplies by 1.2', () => {
-  const p = Proofer();
+  const p = createProofer();
   p.init();
   expect(p.imageZoom).toBe(0.5);
   p.increaseImageZoom();
@@ -167,14 +189,14 @@ test('increaseImageZoom multiplies by 1.2', () => {
 });
 
 test('decreaseImageZoom multiplies by 0.8', () => {
-  const p = Proofer();
+  const p = createProofer();
   p.init();
   p.decreaseImageZoom();
   expect(p.imageZoom).toBeCloseTo(0.4);
 });
 
 test('resetImageZoom restores home zoom', () => {
-  const p = Proofer();
+  const p = createProofer();
   p.init();
   p.imageZoom = 3;
   p.resetImageZoom();
@@ -184,7 +206,7 @@ test('resetImageZoom restores home zoom', () => {
 // -- Text zoom --
 
 test('increaseTextSize adds 0.1', () => {
-  const p = Proofer();
+  const p = createProofer();
   p.init();
   p.increaseTextSize();
   expect(p.textZoom).toBeCloseTo(1.1);
@@ -192,7 +214,7 @@ test('increaseTextSize adds 0.1', () => {
 });
 
 test('decreaseTextSize subtracts 0.1 with min 0.5', () => {
-  const p = Proofer();
+  const p = createProofer();
   p.init();
   p.decreaseTextSize();
   expect(p.textZoom).toBeCloseTo(0.9);
@@ -204,7 +226,7 @@ test('decreaseTextSize subtracts 0.1 with min 0.5', () => {
 });
 
 test('resetTextSize resets to 1', () => {
-  const p = Proofer();
+  const p = createProofer();
   p.init();
   p.textZoom = 2;
   p.resetTextSize();
@@ -214,7 +236,7 @@ test('resetTextSize resets to 1', () => {
 // -- Layout --
 
 test('setLayout changes layout and saves', () => {
-  const p = Proofer();
+  const p = createProofer();
   p.init();
   p.displayImageOnLeft();
   expect(p.layout).toBe('image-left');

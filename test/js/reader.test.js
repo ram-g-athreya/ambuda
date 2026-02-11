@@ -34,7 +34,8 @@ delete window.location;
 window.IMAGE_URL = 'IMAGE_URL';
 window.Sanscript = {
   t: jest.fn((s, from, to) => `${s}:${to}`),
-}
+  schemes: { devanagari: {}, hk: {}, iast: {}, kannada: {} },
+};
 // Mocks for all API requests.
 window.fetch = jest.fn(async (url) => {
   const mapping = {

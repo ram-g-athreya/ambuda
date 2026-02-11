@@ -26,13 +26,23 @@ or pre-build common requests.
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import NewType
 from xml.etree import ElementTree as ET
+
+from lxml import etree
 
 import defusedxml.ElementTree as DET
 from vidyut.lipi import transliterate, Scheme
 
 Attributes = NewType("Attributes", dict[str, str])
+
+
+def indent_xml_file_in_place(path: Path) -> None:
+    """Re-parse an XML file, indent it, and write it back."""
+    tree = etree.parse(str(path))
+    etree.indent(tree, space="  ")
+    tree.write(str(path), encoding="utf-8", xml_declaration=True)
 
 
 @dataclass

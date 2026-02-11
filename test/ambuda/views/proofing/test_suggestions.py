@@ -146,7 +146,7 @@ def test_edit_post__p1_saves_directly(rama_client):
         },
     )
     assert r.status_code == 200
-    assert "suggestion" not in r.text.lower()
+    assert '"canSaveDirectly": true' in r.text
     assert "Saved changes" in r.text
 
 

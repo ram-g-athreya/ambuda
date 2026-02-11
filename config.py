@@ -97,6 +97,9 @@ class BaseConfig:
     # Vidyut extensions
     VIDYUT_DATA_DIR = _env("VIDYUT_DATA_DIR")
 
+    # Local file cache for large artefacts (e.g. published XML).
+    SERVER_FILE_CACHE = _env("SERVER_FILE_CACHE")
+
     # Extensions
     # ----------
 
@@ -185,6 +188,7 @@ class UnitTestConfig:
     BABEL_DEFAULT_LOCALE = "en"
 
     S3_BUCKET = "test-ambuda"
+    SERVER_FILE_CACHE = str(_make_path(Path(__file__).parent / "data" / "file-cache"))
 
     #: Logger setup
     LOG_LEVEL = logging.DEBUG
@@ -291,6 +295,9 @@ def _validate_config(config: BaseConfig):
 
     if not config.VIDYUT_DATA_DIR:
         raise ValueError("This config does not define VIDYUT_DATA_DIR.")
+
+    if not config.SERVER_FILE_CACHE:
+        raise ValueError("This config does not define SERVER_FILE_CACHE.")
 
     # Production-specific validation.
     if config.AMBUDA_ENVIRONMENT == Env.PRODUCTION:

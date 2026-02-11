@@ -99,7 +99,13 @@
   </div>
 </div>
 
-<div class="h-screen flex flex-col overflow-hidden" x-data="proofer" x-init="document.getElementById('editor-loading').style.display = 'none'" x-cloak @keydown.window="if (($event.metaKey || $event.ctrlKey) && $event.key === 'k') { $event.preventDefault(); openCommandPalette(); }">
+<div class="h-screen flex flex-col overflow-hidden"
+     x-data="proofer"
+     x-init="document.getElementById('editor-loading').style.display = 'none'"
+     x-cloak
+     @keydown.window="if (($event.metaKey || $event.ctrlKey) && $event.key === 'k') { $event.preventDefault(); openCommandPalette(); }"
+     data-page-state='{{ page_state|tojson }}'
+     >
 
   {# Command menu: edit, view, tools, ... #}
   {% set button_css = "block p-1 px-2 hover:bg-slate-700" %}
@@ -279,23 +285,14 @@
           <a class="block font-bold hover:underline" href="{{ url_for("proofing.project.summary", slug=project.slug) }}">
             {{ project.display_title }}
           </a>
-          <div class="text-slate-600 text-xs">Page {{ image_number }} of {{ page_context.num_pages }}</div>
+          <div class="text-slate-600 text-xs">Page <span x-text="pageState.pageNumber"></span> of <span x-text="pageState.numPages"></span></div>
         </div>
       </div>
 
       {# Middle panel: image and text controls #}
       <div class="flex items-center gap-3 flex-1">
         <div class="flex items-center gap-2">
-          {% set status = page_context.cur.status.name %}
-          {% if status == 'reviewed-0' %}
-          <span class="p-1 rounded text-xs {{ m.revision_colors(status) }}">{{ _('Needs work') }}</span>
-          {% elif status == 'reviewed-1' %}
-          <span class="p-1 rounded text-xs {{ m.revision_colors(status) }}">{{ _('Proofed once') }}</span>
-          {% elif status == 'reviewed-2' %}
-          <span class="p-1 rounded text-xs {{ m.revision_colors(status) }}">{{ _('Proofed twice') }}</span>
-          {% elif status == 'skip' %}
-          <span class="p-1 rounded text-xs {{ m.revision_colors(status) }}">{{ _('Not relevant') }}</span>
-          {% endif %}
+          <span class="p-1 rounded text-xs" :class="statusBadgeClasses()" x-text="statusLabel()"></span>
         </div>
 
         <div class="border border-slate-300 rounded-full px-3 py-1 bg-slate-50">
@@ -322,23 +319,20 @@
       {# Right side: Navigation and auth #}
       <div class="flex items-center space-x-4 flex-shrink-0">
         <div class="flex items-center gap-2">
-          {% set prev_url = url_for('proofing.page.edit', project_slug=project.slug, page_slug=page_context.prev.slug) %}
-          {% set next_url = url_for('proofing.page.edit', project_slug=project.slug, page_slug=page_context.next.slug) %}
-          <a class="p-2 rounded hover:bg-slate-400" href="{{ prev_url }}">&larr;</a>
-          <a class="p-2 rounded hover:bg-slate-400" href="{{ next_url }}">&rarr;</a>
-          {% if can_save_directly %}
+          <a class="p-2 rounded hover:bg-slate-400"
+             :href="pageState.prevSlug ? '/proofing/' + pageState.projectSlug + '/' + pageState.prevSlug + '/' : null"
+             :class="(!pageState.prevSlug || isNavigating) ? 'opacity-30 pointer-events-none' : ''"
+             @click.prevent="goToPrev">&larr;</a>
+          <a class="p-2 rounded hover:bg-slate-400"
+             :href="pageState.nextSlug ? '/proofing/' + pageState.projectSlug + '/' + pageState.nextSlug + '/' : null"
+             :class="(!pageState.nextSlug || isNavigating) ? 'opacity-30 pointer-events-none' : ''"
+             @click.prevent="goToNext">&rarr;</a>
           <button class="btn btn-submit px-3 py-1.5"
                   type="button"
-                  @click="openSubmitModal">
-            {{ _('Save') }}
+                  :disabled="isSaving"
+                  @click="openSubmitModal"
+                  x-text="isSaving ? '{{ _("Saving...") }}' : (pageState.canSaveDirectly ? '{{ _("Save") }}' : '{{ _("Suggest") }}')">
           </button>
-          {% else %}
-          <button class="btn btn-submit px-3 py-1.5"
-                  type="button"
-                  @click="openSubmitModal">
-            {{ _('Suggest') }}
-          </button>
-          {% endif %}
         </div>
       </div>
     </div>
@@ -368,21 +362,48 @@
 
   {{ mc.flash_messages() }}
 
+  {# Inline alert for AJAX feedback #}
+  <div x-show="alertVisible" x-cloak x-transition
+       class="px-4 py-2 border-b text-sm flex justify-between items-center"
+       :class="{
+         'bg-green-100 text-green-800': alertType === 'success',
+         'bg-red-100 text-red-800': alertType === 'error',
+         'bg-yellow-100 text-yellow-800': alertType === 'warning',
+         'bg-blue-100 text-blue-800': alertType === 'info'
+       }">
+    <span x-text="alertMessage"></span>
+    <button type="button" class="font-bold ml-4 hover:opacity-70" @click="dismissAlert">&times;</button>
+  </div>
+
+  {# Navigation loading indicator #}
+  <div x-show="isNavigating" x-cloak class="h-1 bg-blue-500 animate-pulse"></div>
+
+  {# Unsaved changes warning #}
+  <div x-show="showUnsavedWarning" x-cloak
+       class="px-4 py-3 bg-amber-50 border-b border-amber-200 text-sm flex items-center justify-between">
+    <span class="text-amber-800">{{ _('You have unsaved changes. Discard them and navigate away?') }}</span>
+    <div class="flex gap-2">
+      <button type="button"
+              class="px-3 py-1 border border-slate-300 rounded hover:bg-slate-200 text-sm"
+              @click="cancelNavigation">{{ _('Stay') }}</button>
+      <button type="button"
+              class="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
+              @click="confirmDiscardAndNavigate">{{ _('Discard') }}</button>
+    </div>
+  </div>
+
   {% if conflict %}
   <div class="px-4 py-2 bg-slate-100 border-b">
     <pre class="p-2">{{ conflict.content }}</pre>
   </div>
   {% endif %}
 
-  {% if not has_edits %}
-    {# i18n: This should match the "Tools" and "Run OCR" translations in the proofing tool. #}
+  <div x-show="!pageState.hasEdits" class="px-4 py-2 bg-blue-100 border-b text-xs">
     {% set command = _("Tools &rarr; Run OCR") %}
-    <div class="px-4 py-2 bg-blue-100 border-b text-xs">
-      {% trans %}
-      This page has not been edited yet. Run <i>{{ command }}</i> to get started.
-      {% endtrans %}
-    </div>
-  {% endif %}
+    {% trans %}
+    This page has not been edited yet. Run <i>{{ command }}</i> to get started.
+    {% endtrans %}
+  </div>
 
   <div x-show="isRunningOCR || isRunningLLMStructuring || isRunningStructuring"
        class="bg-blue-100 border-b text-blue-700 px-4 py-2 text-sm"
@@ -403,9 +424,9 @@
 
   <form method="POST" class="flex-1 flex flex-col min-h-0" @submit.prevent="submitForm">
     {{ form.csrf_token }}
-    {{ form.version }}
+    <input type="hidden" name="version" value="{{ page_state.version }}">
     <input type="hidden" name="summary" value="">
-    <input type="hidden" name="status" value="{{ form.status.data }}">
+    <input type="hidden" name="status" value="{{ page_state.status }}">
     <input type="hidden" name="explanation" value="">
 
     <div :class="layoutClasses" class="flex-1 min-h-0" x-ref="splitContainer">
@@ -494,7 +515,7 @@
        class="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center pt-20 z-50">
     <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl overflow-hidden">
       <div class="bg-slate-100 p-4 border-b flex justify-between items-center">
-        <h2 class="text-lg font-bold">{% if can_save_directly %}{{ _('Save changes') }}{% else %}{{ _('Submit suggestion') }}{% endif %}</h2>
+        <h2 class="text-lg font-bold" x-text="pageState.canSaveDirectly ? '{{ _("Save changes") }}' : '{{ _("Submit suggestion") }}'"></h2>
         <button type="button"
                 class="text-slate-700 hover:text-slate-900 font-bold text-xl"
                 @click="closeModal">&times;</button>
@@ -505,8 +526,7 @@
           <div class="bg-slate-50 border border-slate-300 rounded p-3 text-sm font-mono max-h-48 overflow-y-auto whitespace-pre-wrap" x-html="changesPreview"></div>
         </div>
 
-        {% if can_save_directly %}
-        <div class="flex gap-4 items-end">
+        <div x-show="pageState.canSaveDirectly" class="flex gap-4 items-end">
           <div class="flex-1">
             {{ form.summary.label(class_="text-slate-600 mb-1 block text-sm") }}
             <input type="text"
@@ -528,22 +548,18 @@
               {% set radios = form.status|list %}
               <option value="{{ radios[0].data }}">{{ radios[0].label.text }}</option>
               <option value="{{ radios[1].data }}">{{ radios[1].label.text }}</option>
-              {% if not is_r0 %}
-              <option value="{{ radios[2].data }}">{{ radios[2].label.text }}</option>
-              {% endif %}
+              <option x-show="!pageState.isR0" value="{{ radios[2].data }}">{{ radios[2].label.text }}</option>
               <option value="{{ radios[3].data }}">{{ radios[3].label.text }}</option>
             </select>
           </div>
         </div>
-        {% else %}
-        <div>
+        <div x-show="!pageState.canSaveDirectly">
           <label class="text-slate-600 mb-1 block text-sm">{{ _('Explanation (optional)') }}</label>
           <input type="text"
                  x-model="modalExplanation"
                  class="block rounded bg-white w-full p-2 border border-slate-300"
                  placeholder="{{ _('Describe what you changed and why') }}">
         </div>
-        {% endif %}
 
         {% set cc0 = "https://creativecommons.org/publicdomain/zero/1.0/" %}
         <p class="mt-4 text-xs text-slate-600">{% trans %}
@@ -560,8 +576,9 @@
         </button>
         <button type="button"
                 class="btn btn-submit"
-                @click="submitFormFromModal">
-          {% if can_save_directly %}{{ _('Submit my changes') }}{% else %}{{ _('Submit suggestion') }}{% endif %}
+                :disabled="isSaving"
+                @click="submitFormFromModal"
+                x-text="isSaving ? '{{ _("Saving...") }}' : (pageState.canSaveDirectly ? '{{ _("Submit my changes") }}' : '{{ _("Submit suggestion") }}')">
         </button>
       </div>
     </div>
@@ -716,7 +733,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/openseadragon@3.1/build/openseadragon/openseadragon.min.js"></script>
 <script type="text/javascript">
-const IMAGE_URL = "{{ image_url }}";
-const OCR_BOUNDING_BOXES = {{ cur.ocr_bounding_boxes|tojson|safe }};
+history.replaceState({ pageSlug: "{{ page_state.pageSlug }}" }, "", window.location.href);
 </script>
 {% endblock %}

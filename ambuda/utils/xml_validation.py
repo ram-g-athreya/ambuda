@@ -33,6 +33,7 @@ class InlineType(StrEnum):
     NOTE = "note"
     ADD = "add"
     ELLIPSIS = "ellipsis"
+    QUOTE = "quote"
 
 
 class TEITag(StrEnum):

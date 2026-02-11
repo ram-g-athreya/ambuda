@@ -1,4 +1,4 @@
-/* global Alpine, $, OpenSeadragon, Sanscript, IMAGE_URL, OCR_BOUNDING_BOXES */
+/* global Alpine, $, OpenSeadragon, Sanscript */
 /* Transcription and proofreading interface. */
 
 import { $ } from './core.ts';
@@ -210,6 +210,20 @@ export default () => ({
   showMarkToolbar: false,
   inlineMarks: INLINE_MARKS,
 
+  pageState: {},
+
+  // Inline alert state
+  alertMessage: '',
+  alertType: 'success',
+  alertVisible: false,
+  alertTimeout: null,
+
+  // Navigation state
+  isNavigating: false,
+  isSaving: false,
+  showUnsavedWarning: false,
+  pendingNavigation: null,
+
   // Internal-only
   layoutClasses: ImageClasses.Right,
   isRunningOCR: false,
@@ -253,8 +267,13 @@ export default () => ({
     this.loadSettings();
     this.layoutClasses = this.getLayoutClasses();
 
+    this.pageState = JSON.parse(this.$el.dataset.pageState);
+
+    // Browser back/forward support
+    window.addEventListener('popstate', this.onPopState.bind(this));
+
     // OCR bounding boxes (rendered on OSD image viewer)
-    this.boundingBoxes = parseBoundingBoxes(OCR_BOUNDING_BOXES);
+    this.boundingBoxes = parseBoundingBoxes(this.pageState.ocrBoundingBoxes);
     this.boundingBoxLines = groupBoundingBoxesByLine(this.boundingBoxes);
 
     // Initialize editor (either ProofingEditor or XMLView based on viewMode)
@@ -281,7 +300,7 @@ export default () => ({
     }
 
     // Set `imageZoom` only after the viewer is fully initialized.
-    this.imageViewer = initializeImageViewer(IMAGE_URL);
+    this.imageViewer = initializeImageViewer(this.pageState.imageUrl);
     this.imageViewer.addHandler('open', () => {
       if (this.imageZoomMode === 'fit-width' || this.imageZoomMode === 'fit-height') {
         // Defer fit calls until after OSD's initial home animation and browser layout
@@ -306,7 +325,7 @@ export default () => ({
 
   getCommands() {
     const markCommands = INLINE_MARKS.map((mark) => ({
-      label: `Edit > ${mark.label}`,
+      label: `Edit > Mark as '${mark.label}'`,
       action: () => this.toggleMark(mark.name),
     }));
 
@@ -476,10 +495,195 @@ export default () => ({
     return null;
   },
 
+  // SPA navigation
+  // ----------------------------------------------
+
+  goToPrev() {
+    if (this.pageState.prevSlug) this.navigateToPage(this.pageState.prevSlug);
+  },
+
+  goToNext() {
+    if (this.pageState.nextSlug) this.navigateToPage(this.pageState.nextSlug);
+  },
+
+  navigateToPage(slug) {
+    if (this.hasUnsavedChanges) {
+      this.pendingNavigation = slug;
+      this.showUnsavedWarning = true;
+      return;
+    }
+    this.loadPage(slug, true);
+  },
+
+  confirmDiscardAndNavigate() {
+    this.showUnsavedWarning = false;
+    this.hasUnsavedChanges = false;
+    const slug = this.pendingNavigation;
+    this.pendingNavigation = null;
+    if (slug) this.loadPage(slug, true);
+  },
+
+  cancelNavigation() {
+    this.showUnsavedWarning = false;
+    this.pendingNavigation = null;
+  },
+
+  async loadPage(slug, pushState) {
+    this.isNavigating = true;
+    this.dismissAlert();
+
+    try {
+      const url = routes.proofingPageData(this.pageState.projectSlug, slug);
+      const response = await fetch(url);
+      if (!response.ok) {
+        this.showAlert('error', `Failed to load page: ${response.status}`);
+        return;
+      }
+
+      const data = await response.json();
+
+      this.pageState = data;
+
+      // Update editor content
+      Alpine.raw(this.editor).setText(data.content);
+      $('#content').value = data.content;
+      this.originalContent = data.content;
+
+      // Update OpenSeadragon image
+      this.updateImage(data.imageUrl);
+
+      // Update OCR bounding boxes
+      this.clearBoundingBoxHighlight();
+      this.boundingBoxes = parseBoundingBoxes(data.ocrBoundingBoxes);
+      this.boundingBoxLines = groupBoundingBoxesByLine(this.boundingBoxes);
+
+      // Update hidden form fields
+      const versionInput = $('input[name="version"]');
+      if (versionInput) versionInput.value = data.version;
+      const statusInput = $('input[name="status"]');
+      if (statusInput) statusInput.value = data.status;
+
+      // Reset state
+      this.hasUnsavedChanges = false;
+      this.isRunningOCR = false;
+      this.isRunningLLMStructuring = false;
+      this.isRunningStructuring = false;
+
+      // Update browser history and title
+      if (pushState) {
+        const newUrl = data.editUrl;
+        window.history.pushState({ pageSlug: slug }, '', newUrl);
+      }
+      document.title = `Edit: ${this.pageState.projectTitle}/${slug} | Ambuda`;
+    } catch (error) {
+      console.error('Navigation failed:', error);
+      this.showAlert('error', 'Failed to load page. Please check your connection.');
+    } finally {
+      this.isNavigating = false;
+    }
+  },
+
+  onPopState(event) {
+    const slug = event.state && event.state.pageSlug;
+    if (!slug || slug === this.pageState.pageSlug) return;
+
+    if (this.hasUnsavedChanges) {
+      // Re-push current state to "undo" the browser navigation
+      window.history.pushState(
+        { pageSlug: this.pageState.pageSlug },
+        '',
+        `/proofing/${this.pageState.projectSlug}/${this.pageState.pageSlug}/`,
+      );
+      this.pendingNavigation = slug;
+      this.showUnsavedWarning = true;
+      return;
+    }
+
+    this.loadPage(slug, false);
+  },
+
+  updateImage(newUrl) {
+    const viewer = this.imageViewer;
+    if (!viewer) return;
+
+    const { world } = viewer;
+    const itemCount = world.getItemCount();
+    for (let i = itemCount - 1; i >= 0; i -= 1) {
+      world.removeItem(world.getItemAt(i));
+    }
+
+    viewer.addTiledImage({
+      tileSource: {
+        type: 'image',
+        url: newUrl,
+        buildPyramid: false,
+      },
+      success: () => {
+        if (this.imageZoomMode === 'fit-width') {
+          requestAnimationFrame(() => viewer.viewport.fitHorizontally(true));
+        } else if (this.imageZoomMode === 'fit-height') {
+          requestAnimationFrame(() => viewer.viewport.fitVertically(true));
+        } else {
+          const zoom = this.imageZoom || viewer.viewport.getHomeZoom();
+          viewer.viewport.zoomTo(zoom);
+        }
+      },
+    });
+  },
+
+  // Inline alerts
+  // ----------------------------------------------
+
+  showAlert(type, message) {
+    if (this.alertTimeout) {
+      clearTimeout(this.alertTimeout);
+      this.alertTimeout = null;
+    }
+    this.alertType = type;
+    this.alertMessage = message;
+    this.alertVisible = true;
+
+    if (type === 'success' || type === 'info') {
+      this.alertTimeout = setTimeout(() => this.dismissAlert(), 5000);
+    }
+  },
+
+  dismissAlert() {
+    this.alertVisible = false;
+    this.alertMessage = '';
+    if (this.alertTimeout) {
+      clearTimeout(this.alertTimeout);
+      this.alertTimeout = null;
+    }
+  },
+
+  // Status badge helpers
+  // ----------------------------------------------
+
+  statusBadgeClasses() {
+    const colorMap = {
+      'reviewed-0': 'bg-red-200 text-red-800',
+      'reviewed-1': 'bg-yellow-200 text-yellow-800',
+      'reviewed-2': 'bg-green-200 text-green-800',
+      skip: 'bg-gray-200 text-gray-800',
+    };
+    return colorMap[this.pageState.status] || '';
+  },
+
+  statusLabel() {
+    const labelMap = {
+      'reviewed-0': 'Needs work',
+      'reviewed-1': 'Proofed once',
+      'reviewed-2': 'Proofed twice',
+      skip: 'Not relevant',
+    };
+    return labelMap[this.pageState.status] || this.pageState.status;
+  },
+
   // OCR controls
 
   async fetchAndApply(apiPath, options = {}) {
-    const url = window.location.pathname.replace('/proofing/', apiPath);
+    const url = `/api${apiPath}${this.pageState.projectSlug}/${this.pageState.pageSlug}/`;
     const response = await fetch(url, options);
     const content = response.ok ? await response.text() : '(server error)';
     Alpine.raw(this.editor).setText(content);
@@ -488,7 +692,7 @@ export default () => ({
 
   async runOCR() {
     this.isRunningOCR = true;
-    await this.fetchAndApply('/api/ocr/');
+    await this.fetchAndApply('/ocr/');
     this.isRunningOCR = false;
   },
 
@@ -496,7 +700,7 @@ export default () => ({
   async runLLMStructuring() {
     this.isRunningLLMStructuring = true;
     const body = JSON.stringify({ content: Alpine.raw(this.editor).getText() });
-    await this.fetchAndApply('/api/llm-structuring/', {
+    await this.fetchAndApply('/llm-structuring/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body,
@@ -507,7 +711,7 @@ export default () => ({
   async runStructuring() {
     this.isRunningStructuring = true;
     const body = JSON.stringify({ content: Alpine.raw(this.editor).getText() });
-    await this.fetchAndApply('/api/structuring/', {
+    await this.fetchAndApply('/structuring/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body,
@@ -813,8 +1017,7 @@ export default () => ({
     this.historyLoading = true;
     this.historyRevisions = [];
 
-    const { pathname } = window.location;
-    const url = `${pathname.replace('/proofing/', '/api/proofing/')}/history`;
+    const url = `/api/proofing/${this.pageState.projectSlug}/${this.pageState.pageSlug}/history`;
 
     try {
       const response = await fetch(url);
@@ -846,10 +1049,16 @@ export default () => ({
     const currentContent = Alpine.raw(this.editor).getText();
     $('#content').value = currentContent;
 
+    if (this.originalContent.trim() === currentContent.trim()) {
+      this.showAlert('info', 'No changes to save.');
+      return;
+    }
+
     this.changesPreview = this.generateChangesPreview();
 
-    this.modalSummary = $('input[name="summary"]')?.value || '';
-    this.modalStatus = $('input[name="status"]')?.value || '';
+    this.modalSummary = '';
+    this.modalStatus = this.pageState.status;
+    this.modalExplanation = '';
     this.activeModal = ModalType.Submit;
   },
 
@@ -917,26 +1126,73 @@ export default () => ({
   },
 
   submitFormFromModal() {
-    const summaryInput = $('input[name="summary"]');
-    const statusInput = $('input[name="status"]');
-    const explanationInput = $('input[name="explanation"]');
-
-    if (summaryInput) summaryInput.value = this.modalSummary;
-    if (statusInput) statusInput.value = this.modalStatus;
-    if (explanationInput) explanationInput.value = this.modalExplanation;
-
     this.closeModal();
-    this.hasUnsavedChanges = false;
+    this.saveViaAPI();
+  },
 
-    const form = $('form');
-    if (form) {
-      form.submit();
+  async saveViaAPI() {
+    this.isSaving = true;
+
+    try {
+      const content = Alpine.raw(this.editor).getText();
+      const csrfToken = $('input[name="csrf_token"]')?.value || '';
+
+      const formData = new FormData();
+      formData.append('content', content);
+      formData.append('version', this.pageState.version);
+      formData.append('status', this.pageState.canSaveDirectly ? this.modalStatus : this.pageState.status);
+      formData.append('summary', this.modalSummary);
+      formData.append('explanation', this.modalExplanation);
+      formData.append('csrf_token', csrfToken);
+
+      const url = routes.proofingSave(this.pageState.projectSlug, this.pageState.pageSlug);
+      const response = await fetch(url, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (response.status === 401 || response.status === 403) {
+        this.showAlert('error', 'Session expired. Please sign in again.');
+        return;
+      }
+
+      const data = await response.json();
+
+      if (data.ok) {
+        this.hasUnsavedChanges = false;
+        this.originalContent = content;
+        if (data.new_version !== undefined) {
+          this.pageState.version = data.new_version;
+          const versionInput = $('input[name="version"]');
+          if (versionInput) versionInput.value = data.new_version;
+        }
+        if (data.new_status) {
+          this.pageState.status = data.new_status;
+          this.pageState.isR0 = data.new_status === 'reviewed-0';
+          const statusInput = $('input[name="status"]');
+          if (statusInput) statusInput.value = data.new_status;
+        }
+        this.showAlert('success', data.message);
+      } else if (data.conflict_content) {
+        this.showAlert('error', `${data.message}\n\nConflict content is available in the console.`);
+        console.warn('Edit conflict content:', data.conflict_content);
+        if (data.new_version !== undefined) {
+          this.pageState.version = data.new_version;
+        }
+      } else {
+        this.showAlert('error', data.message);
+      }
+    } catch (error) {
+      console.error('Save failed:', error);
+      this.showAlert('error', 'Save failed. Please check your connection.');
+    } finally {
+      this.isSaving = false;
     }
   },
 
   submitForm(e) {
-    this.hasUnsavedChanges = false;
-    e.target.submit();
+    e.preventDefault();
+    this.openSubmitModal();
   },
 
   // Bounding box highlighting

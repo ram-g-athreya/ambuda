@@ -29,6 +29,7 @@ from ambuda.utils.text_exports import ExportType
 from ambuda.tasks.text_exports import (
     delete_text_export,
     create_all_exports_for_text,
+    populate_file_cache,
 )
 from ambuda.tasks.projects import regenerate_project_pages
 from ambuda.utils.tei_parser import parse_document
@@ -665,6 +666,14 @@ def delete_exports(model_name, selected_ids: list | None = None):
         f"Started {task_count} deletion task(s) for {len(selected_ids)} export(s)",
         "success",
     )
+    return redirect(url_for("admin.list_model", model_name=model_name))
+
+
+def save_xml_to_disk_cache(model_name, selected_ids: list | None = None):
+    """Download all XML exports from S3 and save them to the local file cache."""
+    app_environment = current_app.config["AMBUDA_ENVIRONMENT"]
+    populate_file_cache.delay(app_environment=app_environment)
+    flash("Started saving XML files to disk cache.", "success")
     return redirect(url_for("admin.list_model", model_name=model_name))
 
 

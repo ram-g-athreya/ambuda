@@ -2,7 +2,8 @@ import * as core from '@/core.ts';
 
 window.Sanscript = {
   t: jest.fn((s, from, to) => `${s}:${to}`),
-}
+  schemes: { devanagari: {}, hk: {}, iast: {}, kannada: {} },
+};
 
 
 test('forEachSanskritTextNode transforms only Sanskrit text', () => {

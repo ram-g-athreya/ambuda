@@ -82,6 +82,12 @@ export const INLINE_MARKS: InlineMarkConfig[] = [
     label: 'Omitted by editor',
     className: 'pm-ellipsis',
   },
+  {
+    name: 'quote',
+    emoji: '💬',
+    label: 'Quote',
+    className: 'pm-quote',
+  },
 ];
 
 export type MarkName = typeof INLINE_MARKS[number]['name'];

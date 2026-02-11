@@ -11,5 +11,5 @@ def run():
         create_bot_user.run()
     except Exception as ex:
         raise Exception(
-            f"Error: Failed to create page statuses, roles, and bot user.Error: {ex}"
+            f"Failed to create page statuses, roles, and bot user. Error: {ex}"
         ) from ex

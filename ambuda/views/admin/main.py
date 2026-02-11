@@ -275,6 +275,11 @@ MODEL_CONFIG = [
                 slug="delete-exports",
                 handler=tasks.delete_exports,
             ),
+            Task(
+                name="Save XML files to disk cache",
+                slug="save-xml-to-disk-cache",
+                handler=tasks.save_xml_to_disk_cache,
+            ),
         ],
     ),
     ModelConfig(

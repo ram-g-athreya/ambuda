@@ -15,6 +15,7 @@ import defusedxml.ElementTree as DET
 from ambuda import database as db
 from ambuda.utils.project_structuring import ProofPage
 from ambuda.utils import project_utils
+from ambuda.utils.xml import indent_xml_file_in_place
 from ambuda.utils.xml_validation import (
     BlockType,
     InlineType,
@@ -642,6 +643,10 @@ def _create_tei_sections_and_blocks(
     )
 
 
+# CLAUDE: implement a wrapper for etree.xmlfile that is depth-aware and indents XML according to its
+# depth in the tree. The API should be similar so that we can have a drop-in replacement.
+
+
 def create_tei_document(
     project: db.Project, config: db.PublishConfig, out_path: Path
 ) -> TEIConversion:
@@ -762,6 +767,8 @@ def create_tei_document(
                                     xf.write(el)
             # </text>
         # </TEI>
+
+    indent_xml_file_in_place(out_path)
 
     return conversion
 

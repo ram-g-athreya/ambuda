@@ -2,6 +2,7 @@
 
 import dataclasses as dc
 import difflib
+import logging
 import re
 import tempfile
 from datetime import UTC, datetime
@@ -37,6 +38,7 @@ from ambuda.models.proofing import (
 from ambuda.models.texts import TextStatus
 from ambuda.tasks.text_exports import upload_xml_export
 from ambuda.utils import project_utils
+from ambuda.utils.text_exports import read_cached_xml
 from ambuda.views.proofing.decorators import p2_required
 
 
@@ -411,6 +413,14 @@ def preview(project_slug, text_slug):
         return redirect(url_for("proofing.publish.config", slug=project_slug))
     project_, config = result
 
+    warnings = []
+    if not project_.print_title:
+        warnings.append("No print title defined for this project.")
+    if not project_.publisher:
+        warnings.append("No publisher defined for this project.")
+    if not project_.page_numbers:
+        warnings.append("No page numbers defined for this project.")
+
     session = q.get_session()
     existing_text = session.execute(
         sqla.select(db.Text).where(db.Text.slug == text_slug)
@@ -420,58 +430,36 @@ def preview(project_slug, text_slug):
     with tempfile.TemporaryDirectory() as tmpdir:
         tei_path = Path(tmpdir) / "preview.xml"
         document_data = publishing_utils.create_tei_document(project_, config, tei_path)
-        new_header = _extract_header_from_tei(tei_path)
 
-    new_sections_data = [
-        (s.slug, [(b.slug, b.xml) for b in s.blocks]) for s in document_data.sections
-    ]
-    new_xml = _build_tei_xml(
-        new_header, new_sections_data, config.slug, config.language
-    )
+        # Strip namespaces for clean diffing
+        root = etree.parse(str(tei_path)).getroot()
+        for el in root.iter():
+            el.tag = etree.QName(el).localname
+            for key in list(el.attrib):
+                if "{" in key:
+                    el.attrib[etree.QName(key).localname] = el.attrib.pop(key)
+        etree.cleanup_namespaces(root)
+        new_xml = etree.tostring(root, encoding="unicode", xml_declaration=False)
 
-    # Build old TEI from DB through the same pipeline
+    # Read old TEI from local file cache for diffing
     old_xml = ""
     if existing_text:
-        new_section_order = [s.slug for s in document_data.sections]
-
-        old_sections = (
-            session.execute(
-                sqla.select(db.TextSection).where(
-                    db.TextSection.text_id == existing_text.id
+        cache_dir = current_app.config.get("SERVER_FILE_CACHE")
+        raw_xml = read_cached_xml(cache_dir, config.slug)
+        if raw_xml:
+            try:
+                old_root = etree.fromstring(raw_xml.encode())
+                for el in old_root.iter():
+                    el.tag = etree.QName(el).localname
+                    for key in list(el.attrib):
+                        if "{" in key:
+                            el.attrib[etree.QName(key).localname] = el.attrib.pop(key)
+                etree.cleanup_namespaces(old_root)
+                old_xml = etree.tostring(
+                    old_root, encoding="unicode", xml_declaration=False
                 )
-            )
-            .scalars()
-            .all()
-        )
-        old_section_map = {s.slug: s for s in old_sections}
-
-        # Order old sections to match new section order to minimize spurious diffs
-        ordered_old_sections = []
-        for slug in new_section_order:
-            if slug in old_section_map:
-                ordered_old_sections.append(old_section_map.pop(slug))
-        # Append any remaining old sections not in the new order
-        ordered_old_sections.extend(old_section_map.values())
-
-        old_sections_data = []
-        for section in ordered_old_sections:
-            blocks = (
-                session.execute(
-                    sqla.select(db.TextBlock)
-                    .where(db.TextBlock.section_id == section.id)
-                    .order_by(db.TextBlock.n)
-                )
-                .scalars()
-                .all()
-            )
-            old_sections_data.append((section.slug, [(b.slug, b.xml) for b in blocks]))
-
-        old_xml = _build_tei_xml(
-            existing_text.header or "",
-            old_sections_data,
-            existing_text.slug,
-            existing_text.language,
-        )
+            except Exception:
+                logging.exception("Failed to parse cached XML export for diff")
 
     diff_lines = _build_diff_lines(old_xml, new_xml)
 
@@ -488,6 +476,7 @@ def preview(project_slug, text_slug):
         project=project_,
         text_slug=text_slug,
         preview=preview_data,
+        warnings=warnings,
     )
 
 

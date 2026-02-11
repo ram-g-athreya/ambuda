@@ -5,6 +5,7 @@ import hashlib
 import io
 
 import logging
+import shutil
 import tempfile
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -502,6 +503,33 @@ def create_vocab_list(text: db.Text, out_path: Path) -> None:
             writer.writerow([base, block_count, total_count])
 
 
+def write_cached_xml(cache_dir: str | None, text_slug: str, xml_path: Path) -> None:
+    """Copy an XML export into the local file cache for fast diffing."""
+    if not cache_dir:
+        return
+    dest = Path(cache_dir) / "published-texts" / f"{text_slug}.xml"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(xml_path, dest)
+
+
+def delete_cached_xml(cache_dir: str | None, text_slug: str) -> None:
+    """Remove an XML file from the local file cache."""
+    if not cache_dir:
+        return
+    path = Path(cache_dir) / "published-texts" / f"{text_slug}.xml"
+    path.unlink(missing_ok=True)
+
+
+def read_cached_xml(cache_dir: str | None, text_slug: str) -> str | None:
+    """Read an XML file from the local file cache, or return None."""
+    if not cache_dir:
+        return None
+    path = Path(cache_dir) / "published-texts" / f"{text_slug}.xml"
+    if path.exists():
+        return path.read_text(encoding="utf-8")
+    return None
+
+
 def create_or_update_xml_export(
     text_id: int,
     text_slug: str,
@@ -509,6 +537,7 @@ def create_or_update_xml_export(
     s3_bucket: str,
     session,
     q,
+    cache_dir: str | None = None,
 ) -> None:
     """Upload a TEI XML file to S3 and create/update the TextExport record.
 
@@ -524,6 +553,8 @@ def create_or_update_xml_export(
     export_slug = f"{text_slug}.xml"
     s3_path = S3Path(s3_bucket, f"text-exports/{export_slug}")
     s3_path.upload_file(tei_path)
+
+    write_cached_xml(cache_dir, text_slug, tei_path)
 
     text_export = q.text_export(export_slug)
     if text_export:

@@ -13,6 +13,8 @@ from ambuda.tasks.utils import get_db_session
 from ambuda.utils import text_exports
 from ambuda.utils.text_exports import (
     ExportType,
+    write_cached_xml,
+    delete_cached_xml,
     create_or_update_xml_export,
     create_xml_file,
     create_plain_text,
@@ -122,6 +124,13 @@ def create_text_export_inner(
             s3_path.upload_file(output_path)
             logging.info(f"Uploaded {export_key} export to {s3_path}")
 
+            if export_config.type == ExportType.XML:
+                write_cached_xml(
+                    config_obj.SERVER_FILE_CACHE,
+                    text.slug,
+                    output_path,
+                )
+
             text_export = q.text_export(export_slug)
             if text_export:
                 text_export.s3_path = s3_path.path
@@ -161,6 +170,7 @@ def upload_xml_export(self, text_id, text_slug, tei_path, app_environment):
                 s3_bucket=cfg.S3_BUCKET,
                 session=session,
                 q=q,
+                cache_dir=cfg.SERVER_FILE_CACHE,
             )
     finally:
         tei.unlink(missing_ok=True)
@@ -181,6 +191,14 @@ def delete_text_export_inner(export_id: int, app_environment: str, engine=None):
             except Exception as e:
                 logging.warning(f"Could not delete S3 file: {e}")
 
+            if text_export.export_type == ExportType.XML:
+                text = session.get(db.Text, text_export.text_id)
+                if text:
+                    delete_cached_xml(
+                        config_obj.SERVER_FILE_CACHE,
+                        text.slug,
+                    )
+
             session.delete(text_export)
             session.commit()
             logging.info(f"Deleted TextExport record: {export_id}")
@@ -194,6 +212,40 @@ def delete_text_export_inner(export_id: int, app_environment: str, engine=None):
 @app.task(bind=True)
 def delete_text_export(self, export_id: int, app_environment: str):
     delete_text_export_inner(export_id, app_environment)
+
+
+def populate_file_cache_inner(app_environment: str, engine=None):
+    """Download all XML exports from S3 and write them to the local file cache."""
+    with get_db_session(app_environment, engine=engine) as (session, q, config_obj):
+        xml_exports = (
+            session.query(db.TextExport)
+            .filter(db.TextExport.export_type == ExportType.XML)
+            .all()
+        )
+        logging.info(f"Populating file cache with {len(xml_exports)} XML export(s)")
+
+        for export in xml_exports:
+            text = session.get(db.Text, export.text_id)
+            if not text or not export.s3_path:
+                continue
+
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".xml", delete=False) as tmp:
+                    tmp_path = Path(tmp.name)
+
+                s3_path = S3Path.from_path(export.s3_path)
+                s3_path.download_file(tmp_path)
+                write_cached_xml(config_obj.SERVER_FILE_CACHE, text.slug, tmp_path)
+                logging.info(f"Cached XML for {text.slug}")
+            except Exception as e:
+                logging.warning(f"Failed to cache XML for {text.slug}: {e}")
+            finally:
+                tmp_path.unlink(missing_ok=True)
+
+
+@app.task(bind=True)
+def populate_file_cache(self, app_environment: str):
+    populate_file_cache_inner(app_environment)
 
 
 def create_all_exports_for_text(text_id: int, app_environment: str):

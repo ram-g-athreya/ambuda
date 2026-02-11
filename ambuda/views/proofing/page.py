@@ -142,6 +142,44 @@ def _get_image_url(project: db.Project, page: db.Page) -> str:
         return page.cloudfront_url(current_app.config.get("CLOUDFRONT_BASE_URL", ""))
 
 
+def _get_page_data_dict(ctx: PageContext, project: db.Project) -> dict:
+    """Return page data as a plain dict, shared between the HTML view and the JSON API."""
+    cur = ctx.cur
+    has_edits = bool(cur.revisions)
+    content = ""
+    if has_edits:
+        latest_revision = cur.revisions[-1]
+        content = ProofPage.from_content_and_page_id(
+            latest_revision.content, cur.id
+        ).to_xml_string()
+
+    status_names = {s.id: s.name for s in q.page_statuses()}
+    status = status_names[cur.status_id]
+    is_r0 = cur.status.name == SitePageStatus.R0
+
+    return {
+        "projectSlug": project.slug,
+        "projectTitle": project.display_title,
+        "pageSlug": cur.slug,
+        "prevSlug": ctx.prev.slug if ctx.prev else None,
+        "nextSlug": ctx.next.slug if ctx.next else None,
+        "pageNumber": _get_page_number(project, cur),
+        "numPages": ctx.num_pages,
+        "status": status,
+        "version": cur.version,
+        "hasEdits": has_edits,
+        "isR0": is_r0,
+        "content": content,
+        "imageUrl": _get_image_url(project, cur),
+        "ocrBoundingBoxes": cur.ocr_bounding_boxes or "",
+        "editUrl": url_for(
+            "proofing.page.edit",
+            project_slug=project.slug,
+            page_slug=cur.slug,
+        ),
+    }
+
+
 @bp.route("/<project_slug>/<page_slug>/")
 def edit(project_slug, page_slug):
     """Display the page editor."""
@@ -150,41 +188,24 @@ def edit(project_slug, page_slug):
         abort(404)
     assert ctx
 
+    data = _get_page_data_dict(ctx, ctx.project)
+    data["canSaveDirectly"] = current_user.is_authenticated and current_user.is_p1
+
     cur = ctx.cur
     form = EditPageForm()
-    form.version.data = cur.version
-
-    # FIXME: less hacky approach?
-    status_names = {s.id: s.name for s in q.page_statuses()}
-    form.status.data = status_names[cur.status_id]
-
-    has_edits = bool(cur.revisions)
-    if has_edits:
-        latest_revision = cur.revisions[-1]
-        form.content.data = ProofPage.from_content_and_page_id(
-            latest_revision.content, ctx.cur.id
-        ).to_xml_string()
-
-    is_r0 = cur.status.name == SitePageStatus.R0
-    image_number = cur.slug
-    page_number = _get_page_number(ctx.project, cur)
-    image_url = _get_image_url(ctx.project, cur)
-
-    can_save_directly = current_user.is_authenticated and current_user.is_p1
+    form.version.data = data["version"]
+    form.status.data = data["status"]
+    if data["hasEdits"]:
+        form.content.data = data["content"]
 
     return render_template(
         "proofing/pages/edit.html",
         conflict=None,
         cur=ctx.cur,
         form=form,
-        has_edits=has_edits,
-        image_number=image_number,
-        is_r0=is_r0,
+        page_state=data,
         page_context=ctx,
-        page_number=page_number,
         project=ctx.project,
-        image_url=image_url,
-        can_save_directly=can_save_directly,
     )
 
 
@@ -261,27 +282,18 @@ def edit_post(project_slug, page_slug):
     else:
         flash("Sorry, your changes have one or more errors.", "error")
 
-    is_r0 = cur.status.name == SitePageStatus.R0
-    image_number = cur.slug
-    page_number = _get_page_number(ctx.project, cur)
-    image_url = _get_image_url(ctx.project, cur)
+    data = _get_page_data_dict(ctx, ctx.project)
+    data["canSaveDirectly"] = can_save_directly
+    data["hasEdits"] = True
 
-    # Keep args in sync with `edit`. (We can't unify these functions easily
-    # because one function requires login but the other doesn't. Helper
-    # functions don't have any obvious cutting points.
     return render_template(
         "proofing/pages/edit.html",
         conflict=conflict,
         cur=ctx.cur,
         form=form,
-        has_edits=True,
-        image_number=image_number,
-        is_r0=is_r0,
+        page_state=data,
         page_context=ctx,
-        page_number=page_number,
         project=ctx.project,
-        image_url=image_url,
-        can_save_directly=can_save_directly,
     )
 
 

@@ -20,6 +20,10 @@ export default {
 
   proofingAutoStructure: () => '/api/proofing/auto-structure',
 
+  proofingPageData: (projectSlug, pageSlug) => `/api/proofing/${projectSlug}/${pageSlug}/page-data`,
+
+  proofingSave: (projectSlug, pageSlug) => `/api/proofing/${projectSlug}/${pageSlug}/save`,
+
   // TODO: where to put this?
   getTextSlug: () => {
     const { pathname } = window.location;
