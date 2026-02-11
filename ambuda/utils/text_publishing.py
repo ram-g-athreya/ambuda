@@ -414,6 +414,35 @@ def _concatenate_tei_xml_blocks_across_page_boundary(
     first.extend(second)
 
 
+class NCounter:
+    def __init__(self):
+        self.prefix = None
+        self.block_ns = {}
+
+    def set_prefix(self, prefix: str):
+        self.prefix = prefix
+        self.block_ns = {}
+
+    def override(self, tag: str, n: str):
+        self.block_ns[tag] = n
+
+    def next(self, tag: str) -> str:
+        if tag in self.block_ns:
+            # Increment
+            prev_n = self.block_ns[tag]
+            if m := re.search(r"(.*?)(\d+)$", prev_n):
+                n = f"{m.group(1)}{int(m.group(2)) + 1}"
+            else:
+                n = prev_n + "2"
+        else:
+            if self.prefix:
+                n = f"{self.prefix}.{tag}1"
+            else:
+                n = f"{tag}1"
+        self.block_ns[tag] = n
+        return n
+
+
 def _create_tei_sections_and_blocks(
     project: db.Project, config: db.PublishConfig
 ) -> TEIConversion:
@@ -476,22 +505,12 @@ def _create_tei_sections_and_blocks(
     footnote_map: dict[str, ET.Element] = {}
     # n --> page ID (for tying blocks to the pages they come from.)
     page_map: dict[str, int] = {}
-    # str because this could be 1.1, etc.
-    div_n: str = ""
     # tag -> last n for this tag type.
-    block_ns: dict[str, str] = {}
+    ns = NCounter()
     merge_next = None
     active_sp = None
     # Track page statuses
     page_statuses = Counter()
-
-    def _get_next_n(block_ns, tag):
-        prev_n = block_ns.get(tag, f"{tag}0")
-        if m := re.search(r"(.*?)(\d+)$", prev_n):
-            n = f"{m.group(1)}{int(m.group(2)) + 1}"
-        else:
-            n = prev_n + "2"
-        return n
 
     for block in _iter_filtered_blocks(revisions):
         proof_xml = block.page_xml[block.block_index]
@@ -508,7 +527,7 @@ def _create_tei_sections_and_blocks(
                 # TODO: support other `speaker` settings.
                 active_sp = None
             if "div.n" in data:
-                div_n = data["div.n"]
+                ns.set_prefix(data["div.n"])
             continue
 
         # Whether the block should merge into the next of the same type.
@@ -532,16 +551,12 @@ def _create_tei_sections_and_blocks(
             # Do nothing -- these elements should never have an "n" assigned.
             pass
         elif n and tei_xml.tag != "sp":
+            ns.override(tei_xml.tag, n)
             # Explicit n is never added to `sp`, so skip.
             tei_xml.attrib["n"] = n
-            block_ns[tei_xml.tag] = str(n)
         else:
-            n = _get_next_n(block_ns, tei_xml.tag)
-            if div_n:
-                n = f"{div_n}.{n}"
-
+            n = ns.next(tei_xml.tag)
             tei_xml.attrib["n"] = n
-            block_ns[tei_xml.tag] = n
 
             if tei_xml.tag == "sp":
                 for child_xml in tei_xml:
@@ -551,9 +566,8 @@ def _create_tei_sections_and_blocks(
                     if "n" in child_xml.attrib:
                         # Don't overwrite existing `n`.
                         continue
-                    n = _get_next_n(block_ns, child_xml.tag)
+                    n = ns.next(child_xml.tag)
                     child_xml.attrib["n"] = n
-                    block_ns[child_xml.tag] = n
 
         _has_no_text = not (tei_xml.text or "").strip()
         _has_one_stage_element = len(tei_xml) == 1 and tei_xml[0].tag == "stage"

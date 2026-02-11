@@ -302,6 +302,17 @@ def test_create_tei_document__autoincrement():
     )
 
 
+def test_create_tei_document__autoincrement_with_div_n():
+    _test_create_tei_document(
+        ["<page><metadata>div.n=1</metadata><p>a</p><p>b</p><p>c</p></page>"],
+        [
+            s.TEIBlock(xml='<p n="1.p1">a</p>', slug="1.p1", page_id=0),
+            s.TEIBlock(xml='<p n="1.p2">b</p>', slug="1.p2", page_id=0),
+            s.TEIBlock(xml='<p n="1.p3">c</p>', slug="1.p3", page_id=0),
+        ],
+    )
+
+
 def test_create_tei_document__autoincrement_with_dot_prefix():
     _test_create_tei_document(
         ['<page><p n="1.1">a</p><p>b</p><p>c</p></page>'],
