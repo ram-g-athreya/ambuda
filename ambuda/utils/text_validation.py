@@ -2,12 +2,15 @@ import dataclasses as dc
 import re
 from typing import Callable
 import xml.etree.ElementTree as ET
-
+from chanda import analyze_text
 import defusedxml.ElementTree as DET
 from vidyut.lipi import transliterate, Scheme
 
 import ambuda.database as db
 from ambuda.utils.xml_validation import validate_tei_xml
+
+# Whitelist of words if they exist in a line then we ignore chandas errors
+CHANDAS_WHITELIST = ['उवाच']
 
 # pass, fail, warning
 
@@ -133,12 +136,29 @@ def validate_verse_number_if_exists(block: ET.Element) -> ValidationResult:
                     ret.incr_ok()
     return ret
 
+@validation_rule(desc="Validate chandas")
+def validate_chandas(block: ET.Element) -> ValidationResult:
+    ret = ValidationResult()
+    clean_text = "\n".join(block.itertext()).strip()
+    results = analyze_text(clean_text, verse_mode=False, fuzzy=True)
+
+    if len(results.result.line) > 0:
+        for line in results.result.line:
+            ret.incr_total()
+            if line.result.found or any(w in line.result.line.split() for w in CHANDAS_WHITELIST):
+                ret.incr_ok()
+            else:
+                ret.add_error(f'No valid chandas detected for line {line.result.line}')
+    else:
+        ret.add_error(f'No valid chandas detected for text {clean_text}')
+    return ret
 
 RULES = [
     validate_all_blocks_have_unique_n,
     validate_xml_is_well_formed,
     validate_all_sanskrit_text_is_well_formed,
     validate_verse_number_if_exists,
+    validate_chandas,
 ]
 
 
