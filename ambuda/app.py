@@ -147,8 +147,10 @@ def create_app(config_env: str):
     # Debug-only routes for local development.
     if app.debug or config.Env.TESTING:
         from ambuda.views.debug import bp as debug_bp
+        from ambuda.views.ocr_eval import bp as ocr_eval_bp
 
         app.register_blueprint(debug_bp, url_prefix="/debug")
+        app.register_blueprint(ocr_eval_bp, url_prefix="/debug/ocr-eval")
 
     # i18n string trimming
     app.jinja_env.policies["ext.i18n.trimmed"] = True

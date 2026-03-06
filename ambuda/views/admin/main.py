@@ -587,7 +587,11 @@ def check_access():
             abort(404)
         return
 
-    if request.endpoint in ("admin.celery_tasks", "admin.celery_task_detail"):
+    if request.endpoint in (
+        "admin.celery_tasks",
+        "admin.celery_task_detail",
+        "admin.debug_memory",
+    ):
         if not current_user.is_admin:
             abort(404)
         return
@@ -904,4 +908,71 @@ def celery_task_detail(task_log_id):
         models_by_category=get_models_by_category(),
         model_configs={c.model.__name__: c for c in MODEL_CONFIG},
         current_model=None,
+    )
+
+
+_previous_type_counts = {}
+
+
+@bp.route("/debug-memory")
+def debug_memory():
+    """Show memory usage breakdown for the current worker process.
+
+    Hit this endpoint multiple times — the "growth" field shows which
+    object types are increasing between calls, pointing to the leak.
+    """
+    import gc
+    import os
+
+    gc.collect()
+
+    # RSS from /proc if available, else psutil
+    rss_mb = None
+    try:
+        with open(f"/proc/{os.getpid()}/status") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    rss_mb = int(line.split()[1]) / 1024
+                    break
+    except OSError:
+        try:
+            import psutil
+
+            rss_mb = psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024
+        except ImportError:
+            pass
+
+    # Single pass over gc.get_objects()
+    from ambuda.models.base import Base as ModelBase
+
+    type_counts = {}
+    sa_counts = {}
+    for obj in gc.get_objects():
+        t = type(obj).__qualname__
+        type_counts[t] = type_counts.get(t, 0) + 1
+        if isinstance(obj, ModelBase):
+            name = t
+            sa_counts[name] = sa_counts.get(name, 0) + 1
+
+    # Growth since last call
+    global _previous_type_counts
+    growth = {}
+    if _previous_type_counts:
+        for t, count in type_counts.items():
+            prev = _previous_type_counts.get(t, 0)
+            if count > prev:
+                growth[t] = {"count": count, "delta": f"+{count - prev}"}
+    growth = dict(sorted(growth.items(), key=lambda x: -int(x[1]["delta"][1:]))[:20])
+    _previous_type_counts = type_counts
+
+    top_types = dict(sorted(type_counts.items(), key=lambda x: -x[1])[:30])
+    sa_counts = dict(sorted(sa_counts.items(), key=lambda x: -x[1])[:20])
+
+    return jsonify(
+        pid=os.getpid(),
+        rss_mb=round(rss_mb, 1) if rss_mb else None,
+        total_objects=sum(type_counts.values()),
+        top_object_types=top_types,
+        growth=growth,
+        sqlalchemy_instances=sa_counts,
     )

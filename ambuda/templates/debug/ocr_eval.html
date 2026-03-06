@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+
+{% block title %}OCR Eval{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto p-6">
+  <h1 class="text-3xl font-bold mb-6">OCR Eval</h1>
+  <p class="text-gray-600 mb-6">Upload an image to compare Google Vision vs Sarvam.ai OCR output.</p>
+
+  <form action="{{ url_for('ocr_eval.run_ocr') }}" method="post" enctype="multipart/form-data"
+        class="border-2 border-dashed border-gray-300 rounded-lg p-8 mb-8 bg-gray-50">
+    <div class="flex items-center gap-4">
+      <input type="file" name="image" accept="image/*" required
+             class="block text-sm text-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+      <button type="submit"
+              class="px-6 py-2 bg-blue-600 text-white rounded font-medium hover:bg-blue-700">
+        Run OCR
+      </button>
+    </div>
+  </form>
+
+  {% if runs %}
+  <h2 class="text-xl font-semibold mb-4">Recent Runs</h2>
+  <table class="w-full text-sm border-collapse">
+    <thead>
+      <tr class="border-b-2 border-gray-200 text-left">
+        <th class="py-2 pr-4">#</th>
+        <th class="py-2 pr-4">File</th>
+        <th class="py-2 pr-4">Google</th>
+        <th class="py-2 pr-4">Sarvam</th>
+        <th class="py-2 pr-4">Time</th>
+        <th class="py-2">Date</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for run in runs %}
+      <tr class="border-b border-gray-100 hover:bg-gray-50">
+        <td class="py-2 pr-4">
+          <a href="{{ url_for('ocr_eval.view_run', run_id=run['id']) }}" class="text-blue-600 hover:underline">
+            {{ run['id'] }}
+          </a>
+        </td>
+        <td class="py-2 pr-4">{{ run['filename'] }}</td>
+        <td class="py-2 pr-4">
+          {% if run['google_error'] %}
+            <span class="text-red-600">Error</span>
+          {% else %}
+            <span class="text-green-600">{{ (run['google_text'] or '')|length }} chars</span>
+          {% endif %}
+        </td>
+        <td class="py-2 pr-4">
+          {% if run['sarvam_error'] %}
+            <span class="text-red-600">Error</span>
+          {% else %}
+            <span class="text-green-600">{{ (run['sarvam_text'] or '')|length }} chars</span>
+          {% endif %}
+        </td>
+        <td class="py-2 pr-4 text-gray-500">
+          G: {{ run['google_time_ms'] }}ms / S: {{ run['sarvam_time_ms'] }}ms
+        </td>
+        <td class="py-2 text-gray-500">{{ run['created_at'] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endblock %}

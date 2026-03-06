@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+
+{% block title %}OCR Run #{{ run['id'] }}{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto p-6">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <a href="{{ url_for('ocr_eval.index') }}" class="text-blue-600 hover:underline text-sm">&larr; Back</a>
+      <h1 class="text-2xl font-bold mt-1">Run #{{ run['id'] }}: {{ run['filename'] }}</h1>
+      <p class="text-gray-500 text-sm">{{ run['created_at'] }} &middot; Google: {{ run['google_time_ms'] }}ms &middot; Sarvam: {{ run['sarvam_time_ms'] }}ms</p>
+    </div>
+    <form method="post" action="{{ url_for('ocr_eval.delete_run', run_id=run['id']) }}"
+          onsubmit="return confirm('Delete this run?')">
+      <button class="text-red-600 text-sm hover:underline">Delete</button>
+    </form>
+  </div>
+
+  {% if run['google_error'] or run['sarvam_error'] %}
+  <div class="mb-6 space-y-2">
+    {% if run['google_error'] %}
+    <div class="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-800">
+      <strong>Google Error:</strong> {{ run['google_error'] }}
+    </div>
+    {% endif %}
+    {% if run['sarvam_error'] %}
+    <div class="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-800">
+      <strong>Sarvam Error:</strong> {{ run['sarvam_error'] }}
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {# Side-by-side output #}
+  <div class="grid grid-cols-2 gap-4 mb-8">
+    <div>
+      <h2 class="font-semibold mb-2 text-gray-700">Google Vision</h2>
+      <pre class="bg-gray-50 border rounded p-4 text-sm whitespace-pre-wrap overflow-auto max-h-[500px]">{{ run['google_text'] or '(empty)' }}</pre>
+    </div>
+    <div>
+      <h2 class="font-semibold mb-2 text-gray-700">Sarvam.ai</h2>
+      <pre class="bg-gray-50 border rounded p-4 text-sm whitespace-pre-wrap overflow-auto max-h-[500px]">{{ run['sarvam_text'] or '(empty)' }}</pre>
+    </div>
+  </div>
+
+  {# Unified diff #}
+  <h2 class="font-semibold mb-2 text-gray-700">Diff (Google &rarr; Sarvam)</h2>
+  {% if diff %}
+  <pre class="bg-gray-900 text-gray-100 rounded p-4 text-sm overflow-auto max-h-[500px]">{% for line in diff %}{% if line.startswith('---') or line.startswith('+++') %}<span class="text-gray-400">{{ line }}</span>
+{% elif line.startswith('@@') %}<span class="text-cyan-400">{{ line }}</span>
+{% elif line.startswith('+') %}<span class="text-green-400">{{ line }}</span>
+{% elif line.startswith('-') %}<span class="text-red-400">{{ line }}</span>
+{% else %}{{ line }}
+{% endif %}{% endfor %}</pre>
+  {% else %}
+  <p class="text-gray-500 text-sm italic">No differences (or one/both outputs are empty).</p>
+  {% endif %}
+</div>
+{% endblock %}
